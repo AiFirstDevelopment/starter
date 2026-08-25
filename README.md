@@ -125,12 +125,15 @@ flowchart LR
 Everything from `build` rightward runs unattended inside `/quorum:pipeline`. The
 same steps are also available individually — `/quorum:2-build`,
 `/quorum:3-review`, `/quorum:4-quorum` — when you want to drive them by hand.
+`/quorum:status` reads the artifacts on disk and tells you which one you are due
+to run next.
 
 `/quorum:pipeline` and steps 1–4 are **user-invoked only**
 (`disable-model-invocation: true`). Claude will not spontaneously decide it is
 time to run the judge, and it certainly will not launch a nine-agent unattended
-run on its own. The `tests` skills are model-invocable, so Claude can reach for
-them when it recognizes the need, including from inside the pipeline.
+run on its own. `/quorum:status` is model-invocable — it only reads — as are the
+`tests` skills, so Claude can reach for them when it recognizes the need,
+including from inside the pipeline.
 
 ## The artifact contract
 
@@ -311,6 +314,28 @@ disappear instead of solving it:
 It ends by running the suite and **is not done until that suite is green**, then
 writes `verdict.md`.
 
+### `/quorum:status`
+
+Not a step — the answer to "where am I?". Reads the branch, `plan.md`, the
+`reviews/` directory, `verdict.md`, and the working tree, then names the state and
+the **single** next command to run.
+
+The pipeline keeps state nowhere but the filesystem and the branch. That is what
+makes the artifacts the record, but it also means knowing where you stand requires
+reading four things and knowing what their combinations mean. This does that
+reading.
+
+It **changes nothing**. A status command that repairs what it finds cannot be
+trusted to report honestly, so it reports instead: a plan claiming `built` over
+unticked steps, reviews older than the commits they supposedly cover, a missing
+lens (an unexamined dimension, not a clean bill of health), a `blocked` verdict,
+or `ready` sitting beside unresolved escalations — which is a contradiction in the
+judge's own output.
+
+It departs from the artifact contract on one point, deliberately. Where the
+contract says to stop and ask for a slug when the branch is the default branch,
+status reports that as the state it is — naming that case is the whole point.
+
 ---
 
 # The `tests` plugin
@@ -434,6 +459,8 @@ quorum — a delivery pipeline:
                    suite; write docs/work/<slug>/verdict.md.
   /quorum:pipeline After I approve a plan, run all of that unattended and open a
                    pull request at the end. Plan approval is the only human gate.
+  /quorum:status   Report which of those states this branch is in and the single
+                   next command to run. Reads only; changes nothing.
 
 tests — testing discipline:
   /tests:add       Behavioral tests against the fully assembled app through its
@@ -513,7 +540,8 @@ starter/
 │   │       ├── 1-plan/SKILL.md
 │   │       ├── 2-build/SKILL.md
 │   │       ├── 3-review/SKILL.md
-│   │       └── 4-quorum/SKILL.md
+│   │       ├── 4-quorum/SKILL.md
+│   │       └── status/SKILL.md
 │   └── tests/
 │       ├── .claude-plugin/plugin.json
 │       ├── reference/diff-scope.md
