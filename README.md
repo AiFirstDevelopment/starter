@@ -472,10 +472,20 @@ WHAT I WANT YOU TO DO NOW
 
 2. Create docs/work/ with a .gitkeep so the artifact contract has a home.
 
-3. Tell me to restart Claude Code (or run /reload-plugins) so the plugins load,
-   and confirm the skills appear by listing them.
+3. Install the plugins now, so I don't have to add the marketplace by hand:
 
-4. Then stop. Do not start any work. I will begin with /quorum:1-plan, approve the
+   claude plugin marketplace add AiFirstDevelopment/starter
+   claude plugin install quorum@starter
+   claude plugin install tests@starter
+   claude plugin list
+
+   Run these with Bash and show me the output of the last one.
+
+4. Tell me to restart Claude Code. The install above puts the plugins on disk, but
+   a running session only loads plugins at startup, so /quorum:* will not resolve
+   until I restart. After restarting I should see the quorum and tests skills.
+
+5. Then stop. Do not start any work. I will begin with /quorum:1-plan, approve the
    plan, and then run /quorum:pipeline.
 ```
 
