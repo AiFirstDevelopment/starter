@@ -43,8 +43,9 @@ If any review lens is missing, note it — an unexamined dimension is itself a r
 4. **Apply the accepted fixes.** Keep them minimal and in the style of the
    surrounding code.
 
-5. **Run the regression suite** (`/quorum:run-regression-tests`). **You are not
-   done until it is green.** If your own fixes broke something, fix that too.
+5. **Run the regression suite.** Use `/tests:run` if the `tests` plugin is
+   enabled; otherwise find the recipe and run the whole suite yourself. **You are
+   not done until it is green.** If your own fixes broke something, fix that too.
    Never report a verdict over a red suite.
 
 6. **Write `docs/work/<slug>/verdict.md`** and set *Status* in `plan.md` to

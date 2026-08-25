@@ -104,7 +104,7 @@ off as it goes, so a dead session can be resumed by reading this list.
 ## Test strategy
 
 Which acceptance criteria get behavioral tests through the assembled application,
-and which pure logic (if any) warrants unit tests. See `/quorum:add-regression-tests`.
+and which pure logic (if any) warrants unit tests. See `/tests:add`.
 
 ## Build notes
 

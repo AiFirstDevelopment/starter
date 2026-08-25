@@ -34,6 +34,14 @@ outcome to `ready with follow-ups` or `blocked`. Never `ready`.
 
 `PLAN DEFECT` notes left by the builder are always escalations.
 
+## Running the suite
+
+Use `/tests:run` if the `tests` plugin is enabled — it knows how to find, record,
+and classify. If it is not available, do the same work yourself: find the recipe
+(a recorded one under `.claude/skills/`, the CI workflow, or the repo's manifest),
+run the **whole** suite, and classify each failure as code-broken, test-broken,
+environment, or flake. Never let a missing plugin become a reason to skip the run.
+
 ## Give up honestly
 
 If you cannot get the suite green, **say so and stop.** Set `suiteGreen: false`
@@ -43,6 +51,10 @@ is a failed one, and it is the specific failure this whole design exists to
 prevent.
 
 ## Verdict
+
+Commit your accepted fixes on the current branch, separately from the builder's
+commit, so the diff shows what adjudication changed. Do not push and do not open a
+pull request — the pipeline publishes at the end.
 
 Write `docs/work/<slug>/verdict.md` in the format `/quorum:4-quorum` specifies,
 and set *Status* in `plan.md` to `adjudicated`. Lead with anything unmet,

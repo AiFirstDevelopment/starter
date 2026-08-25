@@ -1,0 +1,8 @@
+{
+  "name": "tests",
+  "description": "Behavioral regression tests against the assembled application, proven able to fail, and gated in CI.",
+  "version": "0.2.0",
+  "author": { "name": "Joel Stevick" },
+  "homepage": "https://github.com/AiFirstDevelopment/starter",
+  "keywords": ["testing", "regression", "ci", "coverage"]
+}

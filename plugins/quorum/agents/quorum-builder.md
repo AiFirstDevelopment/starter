@@ -33,5 +33,9 @@ recoverable; an unrecorded one is not.
 
 ## Finish
 
+Commit your work on the current branch with a message describing the change, not
+the process. Do not push and do not open a pull request — the pipeline publishes
+at the end.
+
 Set *Status* in `plan.md` to `built`. Return a summary: what you built, which
 steps are ticked, what deviated, and anything you deliberately left out.

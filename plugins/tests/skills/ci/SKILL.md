@@ -1,5 +1,5 @@
 ---
-name: add-ci
+name: ci
 description: Wires the regression suite into CI as a required status check so a pull request cannot merge while tests fail. Generates the workflow file and explains the branch-protection settings that must be applied in the hosting UI or API.
 ---
 
@@ -15,7 +15,7 @@ documentation, not a gate.
    `.github/` directory or a github.com remote. If a CI config already exists,
    **extend it rather than adding a competing one.**
 
-2. **Establish the test recipe** the same way `/quorum:run-regression-tests` does,
+2. **Establish the test recipe** the same way `/tests:run` does,
    including prerequisites — services, env vars, migrations, build steps. The CI
    job must run the *whole* suite, not a subset.
 

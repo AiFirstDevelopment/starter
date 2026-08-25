@@ -1,5 +1,5 @@
 ---
-name: add-regression-tests
+name: add
 description: Writes behavioral regression tests for the current change, exercising the fully assembled application through its outermost user-facing surface. Verifies each new test actually fails when the behavior it guards is broken. Use when asked to add tests, harden a change, or close test gaps.
 ---
 
@@ -26,7 +26,7 @@ uninvited.
 ## Scope
 
 Default to the diff between this branch and its base — see
-`${CLAUDE_PLUGIN_ROOT}/reference/contract.md`. Include uncommitted changes. Report
+`${CLAUDE_PLUGIN_ROOT}/reference/diff-scope.md`. Include uncommitted changes. Report
 the range you used. If `docs/work/<slug>/plan.md` exists, its acceptance criteria
 are the primary checklist: **every acceptance criterion gets a test.**
 
@@ -122,7 +122,7 @@ until it goes green is not a gate. Every test must be independent and repeatable
    minimal setup and confirm before adding dependencies.
 4. Write behavioral tests, then unit tests for pure logic that warrants it.
 5. Fail-verify every new test as above.
-6. Run the whole suite (`/quorum:run-regression-tests`) and confirm green.
+6. Run the whole suite (`/tests:run`) and confirm green.
 7. Report: behaviors covered, acceptance criteria mapped, tests fail-verified,
    gaps you could not close and why. **Name the gaps** — silence reads as
    complete coverage when it isn't.

@@ -6,6 +6,7 @@ export const meta = {
     { title: 'Review', detail: 'five independent lenses in parallel, read-only' },
     { title: 'Record', detail: 'transcribe findings to docs/work/<slug>/reviews/' },
     { title: 'Adjudicate', detail: 'judge the panel, apply fixes, end green or blocked' },
+    { title: 'Publish', detail: 'push the branch and open or update the PR/MR' },
   ],
 }
 
@@ -14,6 +15,7 @@ if (!slug) throw new Error('pipeline requires args.slug')
 
 const planPath = 'docs/work/' + slug + '/plan.md'
 const skipBuild = !!(args && args.skipBuild)
+const skipPublish = !!(args && args.skipPublish)
 const MAX_JUDGE_PASSES = 2
 
 const FINDINGS_SCHEMA = {
@@ -69,6 +71,20 @@ const VERDICT_SCHEMA = {
     rejected: { type: 'integer' },
     followUps: { type: 'array', items: { type: 'string' } },
     summary: { type: 'string', description: 'two or three sentences for the human at QA time' },
+  },
+}
+
+const PUBLISH_SCHEMA = {
+  type: 'object',
+  required: ['published', 'draft'],
+  additionalProperties: false,
+  properties: {
+    published: { type: 'boolean' },
+    url: { type: 'string' },
+    draft: { type: 'boolean' },
+    action: { type: 'string', enum: ['created', 'updated', 'none'] },
+    host: { type: 'string', description: 'github, gitlab, or unsupported' },
+    reason: { type: 'string', description: 'if not published, why, and what the human must do' },
   },
 }
 
@@ -244,7 +260,72 @@ while (pass < MAX_JUDGE_PASSES) {
 if (!verdict) throw new Error('Adjudication produced no verdict after ' + MAX_JUDGE_PASSES + ' passes.')
 
 if (!verdict.suiteGreen) {
-  log('STOPPING: regression suite still red after ' + pass + ' judging passes. Reported, not worked around.')
+  log('Regression suite still red after ' + pass + ' judging passes. Reported, not worked around.')
+}
+
+// ---------------------------------------------------------------- publish
+
+let published = null
+
+if (skipPublish) {
+  log('Skipping publish (skipPublish set).')
+} else {
+  phase('Publish')
+
+  const lensTally = LENSES.map(function (l) {
+    const r = reviews.filter(function (x) { return x.lens === l.key })[0]
+    const fs = r ? r.findings || [] : []
+    return {
+      lens: l.key,
+      ran: !!r,
+      findings: fs.length,
+      blockers: fs.filter(function (f) { return f.severity === 'blocker' }).length,
+    }
+  })
+
+  published = await agent(
+    'Publish this branch for human review.\n\n' +
+      'The work is finished and adjudicated. Do not change any code — present what is there.\n\n' +
+      'Commit anything still outstanding (the docs/work/' + slug + '/ artifacts belong in the ' +
+      'branch), push the branch, then open a pull request or merge request — or update the ' +
+      'existing one if this branch already has one open, which happens whenever the pipeline ' +
+      'is re-run on a branch. Never open a second one.\n\n' +
+      'The verdict is at docs/work/' + slug + '/verdict.md and the plan at ' + planPath +
+      '. Read both; the plan supplies the intent and the acceptance criteria wording.\n\n' +
+      'Verdict summary:\n```json\n' +
+      JSON.stringify(
+        {
+          outcome: verdict.outcome,
+          suiteGreen: verdict.suiteGreen,
+          suiteSummary: verdict.suiteSummary,
+          unmetCriteria: verdict.unmetCriteria,
+          escalations: verdict.escalations,
+          accepted: verdict.accepted,
+          rejected: verdict.rejected,
+          followUps: verdict.followUps,
+          summary: verdict.summary,
+          lenses: lensTally,
+          lensesMissing: missing,
+        },
+        null,
+        2
+      ) +
+      '\n```\n\n' +
+      (verdict.suiteGreen && verdict.outcome !== 'blocked'
+        ? 'Open it ready for review.'
+        : 'Open it as a DRAFT: the verdict is not clean. Lead the body with what is failing ' +
+          'or unresolved, and prefix the title with "[blocked]" if the outcome is blocked.') +
+      '\n\nNever merge, approve, or enable auto-merge. Never force-push. If the host is ' +
+      'unsupported or its CLI is unavailable, do not fail — print the title, body, and command ' +
+      'you would have used and report that a human must publish.',
+    { label: 'publish', phase: 'Publish', agentType: 'quorum-publisher', schema: PUBLISH_SCHEMA }
+  )
+
+  if (published && published.published) {
+    log((published.draft ? 'Draft ' : '') + 'PR ' + (published.action || 'opened') + ': ' + published.url)
+  } else {
+    log('NOT PUBLISHED — ' + ((published && published.reason) || 'publish stage returned nothing') )
+  }
 }
 
 return {
@@ -264,4 +345,9 @@ return {
   summary: verdict.summary,
   judgePasses: pass,
   verdictPath: 'docs/work/' + slug + '/verdict.md',
+  published: published ? !!published.published : false,
+  prUrl: published ? published.url : undefined,
+  prDraft: published ? published.draft : undefined,
+  prAction: published ? published.action : undefined,
+  publishBlockedReason: published && !published.published ? published.reason : undefined,
 }

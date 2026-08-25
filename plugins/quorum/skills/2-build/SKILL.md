@@ -41,8 +41,8 @@ Read `${CLAUDE_PLUGIN_ROOT}/reference/contract.md` for slug and layout rules.
    unrelated issues you notice, do not refactor adjacent code. Note them for the
    user instead.
 
-7. **Run whatever tests exist** (`/quorum:run-regression-tests`) and report the
-   result honestly. Do not report the build complete with failing tests.
+7. **Run whatever tests exist** (`/tests:run`, or the repo's own command if the
+   `tests` plugin is not enabled) and report the result honestly. Do not report the build complete with failing tests.
 
 8. **Update *Status*** in `plan.md` to `built`, then report: what was built, which
    steps are ticked, what deviated, test results, and anything you deliberately

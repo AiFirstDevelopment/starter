@@ -1,5 +1,5 @@
 ---
-name: run-regression-tests
+name: run
 description: Runs the full regression suite, discovering and recording how this repo runs its tests, and reports failures in a structured form the rest of the quorum pipeline can consume. Distinguishes broken code from broken tests from flakes.
 ---
 

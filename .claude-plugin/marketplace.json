@@ -1,22 +1,31 @@
 {
-  "name": "quorum",
+  "name": "starter",
   "owner": {
     "name": "Joel Stevick",
     "url": "https://github.com/AiFirstDevelopment"
   },
   "metadata": {
-    "description": "Reusable Claude Code skills: a plan-build-review-adjudicate delivery pipeline plus behavioral regression testing and CI gating.",
-    "version": "0.1.0"
+    "description": "Starter kit of reusable Claude Code skills to pull into new repos: an autonomous delivery pipeline and a behavioral regression-testing discipline.",
+    "version": "0.2.0"
   },
   "plugins": [
     {
       "name": "quorum",
       "source": "./plugins/quorum",
-      "description": "A four-step delivery pipeline (plan, build, multi-lens review, adjudication) with behavioral regression tests and CI gating.",
-      "version": "0.1.0",
+      "description": "Plan, build, multi-lens review, and adjudication - run step by step or autonomously from an approved plan, ending in a pull request.",
+      "version": "0.2.0",
       "author": { "name": "Joel Stevick" },
       "category": "workflow",
-      "tags": ["planning", "review", "testing", "ci", "pipeline"]
+      "tags": ["planning", "review", "adjudication", "pipeline", "automation"]
+    },
+    {
+      "name": "tests",
+      "source": "./plugins/tests",
+      "description": "Behavioral regression tests against the assembled application, proven able to fail, and gated in CI.",
+      "version": "0.2.0",
+      "author": { "name": "Joel Stevick" },
+      "category": "testing",
+      "tags": ["testing", "regression", "ci", "coverage"]
     }
   ]
 }

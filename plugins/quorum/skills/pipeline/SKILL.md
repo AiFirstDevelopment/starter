@@ -30,7 +30,7 @@ met yet, and burn eight agents doing it.
 writes code. A judge running on every push would commit to the branch
 unsupervised, on top of its own previous output, with no approval gate in sight —
 and the approval gate is the entire safety model. CI's job is to run the
-regression suite (`/quorum:add-ci`); judgment stays on demand.
+regression suite (`/tests:ci`); judgment stays on demand.
 
 ## Running it more than once on a branch
 
