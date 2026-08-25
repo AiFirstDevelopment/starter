@@ -76,7 +76,9 @@ This is the only step that may create a branch. Every later step still stops.
    questions* and ask the user directly before finishing. Make routine judgment
    calls yourself; escalate only forks that lead to materially different work.
 
-5. **Write `docs/work/<slug>/plan.md`** using the template below.
+5. **Write `docs/work/<slug>/plan.md`** using the template below. Where a
+   diagram would carry the design better than a paragraph, draw one in mermaid
+   — see *Diagrams*.
 
 6. **Stop.** Report the path and summarize the acceptance criteria and any open
    questions. Do not begin building.
@@ -89,7 +91,7 @@ This is the only step that may create a branch. Every later step still stops.
 
 ## Template
 
-```markdown
+````markdown
 # Plan: <short title>
 
 - **Slug:** <slug>
@@ -134,6 +136,19 @@ not blocked. Empty is fine — but only if it is genuinely empty.
 The intended implementation, at the level of files and responsibilities. Name the
 existing patterns being followed. Call out anything risky or irreversible.
 
+Include a mermaid diagram here when the change has a shape prose describes
+poorly — see *Diagrams* below. Omit the diagram entirely when it would only
+restate the paragraph above it.
+
+```mermaid
+flowchart LR
+  A[incoming webhook] --> B{signature valid?}
+  B -- no --> C[401, no retry]
+  B -- yes --> D[enqueue job]
+  D --> E[worker]
+  E -- fails --> F[retry queue]
+```
+
 ## Steps
 
 Ordered and small enough to verify individually. `/quorum:2-build` ticks these
@@ -150,7 +165,39 @@ and which pure logic (if any) warrants unit tests. See `/tests:add`.
 ## Build notes
 
 Left empty by this step. `/quorum:2-build` appends deviations here.
-```
+````
+
+## Diagrams
+
+Plans are read by a builder, by reviewers, and by whoever adjudicates the result.
+A mermaid diagram is worth including when it shows something the prose would
+otherwise ask the reader to hold in their head. GitHub and most markdown viewers
+render fenced ```` ```mermaid ```` blocks, so no tooling is needed.
+
+Reach for one when the change involves:
+
+- **Control flow with branches** — `flowchart`. Especially failure paths and the
+  conditions that lead to them.
+- **Two or more components talking** — `sequenceDiagram`. Requests crossing a
+  service boundary, retries, callbacks, anything where ordering matters.
+- **A lifecycle or status field** — `stateDiagram-v2`. Which transitions are
+  legal, and which are deliberately not.
+- **New or reshaped persisted data** — `erDiagram`. Only when relationships or
+  cardinality change; a single added column is not a diagram.
+
+Keep them honest:
+
+- The diagram supplements the acceptance criteria; it never replaces them. A
+  reviewer must still be able to check every AC from its text alone.
+- Roughly a dozen nodes is the ceiling. Past that, split it or cut it — an
+  unreadable diagram is worse than none.
+- Label the edges. `A --> B` says nothing an arrow in prose would not.
+- Diagram what the change makes true, not the current state, unless you say
+  explicitly which one you are showing. A before/after pair is fine when the
+  point of the work is the difference between them.
+- If the diagram and the prose disagree, the plan is wrong somewhere. Fix both.
+
+A three-line change gets no diagram. Do not draw one to look thorough.
 
 ## Status lifecycle
 
