@@ -4,7 +4,8 @@ Plan → build → multi-lens review → adjudication, ending in a pull request.
 
 Run the steps by hand (`/quorum:1-plan`, `/quorum:2-build`, `/quorum:3-review`,
 `/quorum:4-quorum`) or approve a plan and run `/quorum:pipeline` to have the rest
-happen unattended.
+happen unattended. `/quorum:status` reads the artifacts on disk and tells you
+which of those you are due to run next.
 
 **Pairs with the `tests` plugin.** The judge must run a regression suite before it
 can reach a verdict; `/tests:run` is how it prefers to do that. Without the `tests`
