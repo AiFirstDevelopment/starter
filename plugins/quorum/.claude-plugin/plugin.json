@@ -1,0 +1,8 @@
+{
+  "name": "quorum",
+  "description": "A four-step delivery pipeline (plan, build, multi-lens review, adjudication) with behavioral regression tests and CI gating.",
+  "version": "0.1.0",
+  "author": { "name": "Joel Stevick" },
+  "homepage": "https://github.com/AiFirstDevelopment/quorum",
+  "keywords": ["planning", "review", "testing", "ci", "pipeline"]
+}
