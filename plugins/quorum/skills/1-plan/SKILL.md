@@ -38,7 +38,13 @@ everything else is supporting material.**
 4. **Write `docs/work/<slug>/plan.md`** using the template below.
 
 5. **Stop.** Report the path and summarize the acceptance criteria and any open
-   questions. Do not begin building. The user runs `/quorum:2-build` when ready.
+   questions. Do not begin building.
+
+   The user then either drives the steps by hand (`/quorum:2-build`,
+   `/quorum:3-review`, `/quorum:4-quorum`) or runs `/quorum:pipeline`, which
+   executes all of it unattended. **Assume the latter.** Plan approval is the last
+   human checkpoint, so anything you leave vague is something a builder will have
+   to guess at with nobody to ask.
 
 ## Template
 
@@ -104,6 +110,13 @@ and which pure logic (if any) warrants unit tests. See `/quorum:add-regression-t
 
 Left empty by this step. `/quorum:2-build` appends deviations here.
 ```
+
+## Status lifecycle
+
+*Status* moves `planned` → `approved` → `built` → `adjudicated`. You write
+`planned`. Only the user approves, via `/quorum:pipeline`'s approval gate or by
+editing the plan. **Never write `approved` yourself** — a plan that approves
+itself defeats the only checkpoint in the system.
 
 ## Rules
 

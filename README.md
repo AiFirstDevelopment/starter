@@ -1,8 +1,13 @@
 # Quorum
 
-A Claude Code plugin marketplace holding reusable skills — a four-step delivery
-pipeline (**plan → build → review → adjudicate**) plus behavioral regression
-testing and CI gating.
+A Claude Code plugin marketplace holding reusable skills — a delivery pipeline
+(**plan → build → review → adjudicate**) plus behavioral regression testing and
+CI gating.
+
+Run the steps by hand, or approve a plan and run
+[`/quorum:pipeline`](#quorumpipeline--the-autonomous-run) to have the rest happen
+unattended: build, five independent reviewers in parallel, then a judge that
+applies fixes and stops only on a green suite or an honest red one.
 
 This repo is the single canonical source for those skills. Future repos pull them
 in by committing about eight lines of JSON; they do not copy the skills, and
@@ -27,6 +32,11 @@ success. Every design decision here is aimed at breaking that loop:
   criterion met when it isn't.
 - **Tests must be proven able to fail.** A test that passes against broken code is
   worse than no test, because it is a merge gate you trust.
+
+Once a plan is approved the whole thing runs unattended, so these stop being good
+practice and start being the only safeguards there are. That is why the judge's
+prohibitions are absolute rather than advisory, and why a run that ends *blocked*
+with a clear reason counts as success.
 
 ### Why "quorum"
 
@@ -89,28 +99,41 @@ Omit `ref` to track the default branch and pick up improvements automatically.
 
 ```mermaid
 flowchart LR
-    P["/quorum:1-plan<br/><i>intent + criteria</i>"] --> B["/quorum:2-build<br/><i>implement</i>"]
-    B --> R["/quorum:3-review<br/><i>5 independent lenses</i>"]
-    R --> Q["/quorum:4-quorum<br/><i>judge + fix + verdict</i>"]
-    Q -->|escalations| P
-    B -.-> T["/quorum:add-regression-tests"]
-    Q -.-> V["/quorum:run-regression-tests<br/><i>must end green</i>"]
+    P["/quorum:1-plan"] --> G{"human<br/>approval"}
+    G --> B["build"]
+    B --> R1["correctness"]
+    B --> R2["spec-fidelity"]
+    B --> R3["security"]
+    B --> R4["simplicity"]
+    B --> R5["test-quality"]
+    R1 --> J["judge<br/><i>fix + verdict</i>"]
+    R2 --> J
+    R3 --> J
+    R4 --> J
+    R5 --> J
+    J --> QA["QA reads<br/>verdict.md"]
 ```
+
+Everything from `build` rightward runs unattended inside `/quorum:pipeline`. The
+same steps are also available individually as `/quorum:2-build`,
+`/quorum:3-review`, and `/quorum:4-quorum` when you want to drive them by hand.
 
 Skills are namespaced by their plugin, so they are invoked as `/quorum:1-plan`,
 `/quorum:2-build`, and so on. The numeric prefixes keep them ordered in
 autocomplete and make the sequence self-documenting.
 
-Steps 1–4 are **user-invoked only** (`disable-model-invocation: true`). Claude
-will not spontaneously decide it is time to run the judge — these are deliberate
-steps you drive. The two testing skills are model-invocable, so Claude can reach
-for them when it recognizes the need.
+`/quorum:pipeline` and steps 1–4 are **user-invoked only**
+(`disable-model-invocation: true`). Claude will not spontaneously decide it is
+time to run the judge, and it certainly will not launch an eight-agent unattended
+run on its own — these are deliberate steps you trigger. The three testing and CI
+skills are model-invocable, so Claude can reach for them when it recognizes the
+need, including from inside the pipeline.
 
 ---
 
 ## The artifact contract
 
-The four pipeline steps hand state to each other through files. That handoff is a
+The pipeline steps hand state to each other through files. That handoff is a
 contract, and it is defined once in
 [`plugins/quorum/reference/contract.md`](plugins/quorum/reference/contract.md)
 rather than re-improvised by each skill:
@@ -136,6 +159,48 @@ in flight don't collide, and you keep the history of what was planned and why.
 ---
 
 ## The skills
+
+### `/quorum:pipeline` — the autonomous run
+
+Takes an approved plan and delivers the change with no further human involvement.
+One human gate, at the start; after that, the next thing a person sees is
+`verdict.md`.
+
+It runs a deterministic [workflow script](plugins/quorum/workflow/pipeline.js)
+rather than improvising the orchestration, so the sequence is identical every run
+and a failed run resumes instead of being re-paid for:
+
+1. **Build** — one agent implements the plan.
+2. **Review** — five lens agents run **in parallel, in fresh context**, each
+   returning schema-validated findings. This is a genuine barrier: the judge needs
+   all five at once.
+3. **Record** — a write-only scribe transcribes the findings verbatim to
+   `docs/work/<slug>/reviews/`.
+4. **Adjudicate** — the judge verifies findings against the code, fixes the real
+   ones, and runs the suite. At most **two passes**; then it stops.
+
+Eight agents per run.
+
+**The approval gate.** If the plan's *Status* isn't `approved`, the skill shows
+you Intent, Acceptance criteria, Non-goals, and any unanswered Open questions, and
+asks. Unanswered questions matter more here than anywhere else: after this point
+there is nobody to ask, and the builder must guess and record the guess. `1-plan`
+is forbidden from writing `approved` itself — a plan that approves its own
+execution defeats the only checkpoint in the system.
+
+**Give-up conditions.** An unattended pipeline must be able to fail cleanly rather
+than grind or paper over:
+
+- Suite still red after two judging passes → stops, `outcome: blocked`, reports
+  exactly what fails.
+- All review lenses fail → throws rather than adjudicating blind.
+- A single lens fails → run continues, but the missing lens is reported as an
+  **unexamined dimension**, not a clean bill of health.
+- Any escalation or unmet criterion forces `ready with follow-ups` or `blocked` —
+  never `ready`.
+
+**A run that ends `blocked` with a clear reason is this pipeline working.** The
+failure mode it exists to prevent is a green suite bought by deleting a test.
 
 ### `/quorum:1-plan`
 
@@ -268,6 +333,31 @@ setting, so the workflow alone blocks nothing. The skill supplies the exact
 
 ---
 
+## Enforcement, not just instruction
+
+With no human in the loop, a rule written in prose is a rule a model can drift
+past. The pipeline ships [agent definitions](plugins/quorum/agents/) whose tool
+lists make the two most load-bearing constraints structural:
+
+| Agent | Tools | Effect |
+|---|---|---|
+| `quorum-reviewer` | `Read, Grep, Glob, Bash` | No `Edit`, no `Write`. "Review fixes nothing" stops being a request. |
+| `quorum-scribe` | `Write` | Cannot read source, so it can only transcribe findings — not editorialize about code. |
+| `quorum-builder` | default | Build rules baked into its system prompt. |
+| `quorum-judge` | default | Needs full tools; it is the one agent that legitimately edits code. |
+
+**Being honest about how far this goes:** removing `Edit` and `Write` closes the
+easy path and the accidental path, not every path — a reviewer still has `Bash`,
+which it needs to read the diff, and `Bash` can write files. This raises the cost
+of drift substantially; it is not a sandbox. The reviewers also never *return* a
+patch, so there is no edit for the judge to apply blindly.
+
+Separating the scribe from the judge is deliberate too: the judge adjudicates
+reviews it did not write, from files it did not author, so the record it is
+weighed against isn't its own.
+
+---
+
 ## A prompt for a new repo
 
 Paste this into Claude Code in a repo that should adopt this workflow. It explains
@@ -280,7 +370,13 @@ what I want you to do.
 WHAT QUORUM IS
 
 Quorum is a plugin marketplace at https://github.com/AiFirstDevelopment/quorum
-providing seven skills: a four-step delivery pipeline plus testing and CI.
+providing eight skills: a delivery pipeline plus testing and CI.
+
+  /quorum:pipeline After I approve a plan, run everything unattended: build, five
+                   independent review lenses in parallel, then a judge that applies
+                   fixes and ends on a green suite or an honest red one. Plan
+                   approval is the only human gate; the next thing I see is
+                   docs/work/<slug>/verdict.md.
 
   /quorum:1-plan   Investigate a change request and write docs/work/<slug>/plan.md
                    capturing Intent, falsifiable Acceptance criteria, Non-goals,
@@ -331,8 +427,8 @@ WHAT I WANT YOU TO DO NOW
 3. Tell me to restart Claude Code (or run /reload-plugins) so the skills load, and
    confirm they appear by listing them.
 
-4. Then stop. Do not start any work. I will drive the pipeline myself starting
-   with /quorum:1-plan.
+4. Then stop. Do not start any work. I will begin with /quorum:1-plan, approve the
+   plan, and then run /quorum:pipeline.
 ```
 
 ---
@@ -347,9 +443,17 @@ quorum/
 │   └── quorum/
 │       ├── .claude-plugin/
 │       │   └── plugin.json       # plugin manifest
+│       ├── agents/               # tool-restricted agents used by the pipeline
+│       │   ├── quorum-builder.md
+│       │   ├── quorum-reviewer.md
+│       │   ├── quorum-scribe.md
+│       │   └── quorum-judge.md
+│       ├── workflow/
+│       │   └── pipeline.js       # deterministic orchestration for /quorum:pipeline
 │       ├── reference/
 │       │   └── contract.md       # shared artifact contract, read by the skills
 │       └── skills/
+│           ├── pipeline/SKILL.md
 │           ├── 1-plan/SKILL.md
 │           ├── 2-build/SKILL.md
 │           ├── 3-review/SKILL.md
@@ -375,6 +479,11 @@ To test a change without pushing, add the local checkout as a marketplace:
 ```
 /plugin marketplace add ./path/to/quorum
 ```
+
+Changes to `workflow/pipeline.js` are worth testing against a throwaway repo
+before pushing — a bad orchestration script fails eight agents deep, and repos
+tracking the default branch pick it up immediately. Pin those repos to a tag if
+that matters.
 
 Adding a skill means creating `plugins/quorum/skills/<name>/SKILL.md` with a
 `description` in its frontmatter — that description is how Claude decides when the
