@@ -1,6 +1,6 @@
 ---
 name: 1-plan
-description: Step 1 of the quorum pipeline. Investigates a requested change and writes a planning document capturing intent, acceptance criteria, and non-goals to docs/work/<slug>/plan.md. Writes no code.
+description: Step 1 of the quorum pipeline. Creates the work branch when run from the default branch, investigates a requested change, and writes a planning document capturing intent, acceptance criteria, and non-goals to docs/work/<slug>/plan.md. Writes no code.
 disable-model-invocation: true
 ---
 
@@ -20,24 +20,65 @@ terms, before the code existed. A plan that is only a task list makes step 4
 impossible. **Acceptance criteria are the load-bearing part of this document —
 everything else is supporting material.**
 
+## One deliberate deviation from the contract
+
+The contract says to stop and ask for a slug when the branch is the default
+branch. **Do not stop here.** Standing on `main` with a change in mind and no
+branch yet is how a work item normally starts. Name the branch, create it, and
+carry on. The contract's rule exists to keep pipeline artifacts from being
+written against a slug derived from `main` — creating the branch honours that
+rule rather than breaking it.
+
+This is the only step that may create a branch. Every later step still stops.
+
 ## Procedure
 
-1. **Resolve the slug** per the contract. If `docs/work/<slug>/plan.md` already
+1. **Establish the branch.** Run `git branch --show-current`.
+
+   - **Already on a feature branch** — use it. Resolve the slug from it per the
+     contract. Do not rename it to something you like better.
+
+   - **On `main` or `master`** — derive a name from the request and create the
+     branch before writing anything:
+
+     ```bash
+     git checkout -b feature/<name>
+     ```
+
+     Take `<name>` from the substance of the request rather than its phrasing:
+     two to four kebab-case words a reviewer would recognise in a branch list.
+     `retry-failed-webhooks`, not `updates` or `new-code`. Use `fix/` when the
+     request repairs broken behaviour, `chore/` for maintenance with no
+     user-visible effect, `feature/` otherwise. If the request names a ticket,
+     lead with it — `feature/proj-12-add-login`. Never invent a ticket number.
+
+     Create it and say which name you chose; do not ask permission first. The
+     branch costs nothing and `git branch -m <better-name>` renames it. This
+     works on a repository with no commits yet. Uncommitted work follows you onto
+     the new branch — do not commit, stash, or discard it to tidy up first.
+
+     If the name is taken, switch to that branch only when it is plainly the same
+     work item; otherwise choose a more specific name.
+
+   - **Not a git repository, or git is unavailable** — do not fabricate a slug.
+     Report it and ask the user, per the contract.
+
+2. **Resolve the slug** per the contract. If `docs/work/<slug>/plan.md` already
    exists, do not silently overwrite it. Report it and ask whether to revise the
    existing plan or start a new work item under a different slug.
 
-2. **Investigate before planning.** Read the code the change touches. Identify
+3. **Investigate before planning.** Read the code the change touches. Identify
    the existing patterns, the test setup, the build and run commands. A plan
    written without reading the repo will propose things that do not fit it.
 
-3. **Surface unknowns as questions, not assumptions.** If the request is
+4. **Surface unknowns as questions, not assumptions.** If the request is
    ambiguous in a way that would change the shape of the work, put it in *Open
    questions* and ask the user directly before finishing. Make routine judgment
    calls yourself; escalate only forks that lead to materially different work.
 
-4. **Write `docs/work/<slug>/plan.md`** using the template below.
+5. **Write `docs/work/<slug>/plan.md`** using the template below.
 
-5. **Stop.** Report the path and summarize the acceptance criteria and any open
+6. **Stop.** Report the path and summarize the acceptance criteria and any open
    questions. Do not begin building.
 
    The user then either drives the steps by hand (`/quorum:2-build`,
@@ -121,6 +162,8 @@ itself defeats the only checkpoint in the system.
 ## Rules
 
 - No production code, no test code, no dependency changes in this step.
+- Creating the work branch is the only write to git this step makes. No
+  commits, no pushes, no rebases — the branch starts empty on purpose.
 - Every acceptance criterion must be falsifiable. If you cannot describe how it
   would be observed failing, it is not an acceptance criterion — rewrite it.
 - Do not pad the plan. A three-line change gets a short plan.

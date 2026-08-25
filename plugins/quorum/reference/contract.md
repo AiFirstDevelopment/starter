@@ -26,6 +26,10 @@ In order of precedence:
    slug derived from the default branch — that is a sign work is happening on the
    wrong branch.
 
+   `/quorum:1-plan` is the one exception: rather than stopping, it names and
+   creates the work branch, then resolves the slug from it. Every other step
+   stops. See that skill for the naming rules.
+
 Once a step has resolved a slug, later steps in the same session reuse it.
 
 ## Review numbering
