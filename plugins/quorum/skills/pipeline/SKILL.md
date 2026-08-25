@@ -15,6 +15,39 @@ Plan approval is the only gate. After it, nobody is watching until QA reads
 
 Read `${CLAUDE_PLUGIN_ROOT}/reference/contract.md` for slug and layout rules.
 
+## When to run this
+
+**Per branch, on demand — never per commit.** The unit of work is the whole
+branch: the diff is measured from the fork point to `HEAD`, the slug comes from
+the branch name, and the acceptance criteria describe a finished change, not an
+intermediate state. Run it when the branch is ready for judgment, typically once
+before opening a PR.
+
+Running it per commit would review half-finished work against criteria nothing has
+met yet, and burn eight agents doing it.
+
+**Never wire this into CI, a git hook, or any automatic trigger.** The judge
+writes code. A judge running on every push would commit to the branch
+unsupervised, on top of its own previous output, with no approval gate in sight —
+and the approval gate is the entire safety model. CI's job is to run the
+regression suite (`/quorum:add-ci`); judgment stays on demand.
+
+## Running it more than once on a branch
+
+Normal and supported. Review work is asked for after more work lands, or after a
+`blocked` run is unblocked.
+
+- Reviews are **append-only**: a second run writes `006-correctness.md` and so on,
+  leaving the first round's record intact. Never renumber or delete earlier
+  reviews — a superseded review is still evidence of what was true then.
+- The plan's *Status* will read `adjudicated` from the previous run, so the
+  approval gate triggers again. That is correct: **every unattended run gets its
+  own authorization.** Say plainly that this is a re-run, what changed since the
+  last one, and what the previous verdict concluded — do not present the plan as
+  though it were new.
+- If the previous run ended `blocked`, lead with what blocked it and whether it
+  has been addressed.
+
 ## Step 1 — Preconditions
 
 1. Resolve the slug per the contract.

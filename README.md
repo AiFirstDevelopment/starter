@@ -181,6 +181,22 @@ and a failed run resumes instead of being re-paid for:
 
 Eight agents per run.
 
+**Per branch, on demand — not per commit.** The unit of work is the whole branch:
+the diff is measured from the fork point to `HEAD`, the slug comes from the branch
+name, and the acceptance criteria describe a finished change. Run it when the
+branch is ready for judgment, usually once before opening a PR. Running it per
+commit reviews half-finished work against criteria nothing has met yet.
+
+Running it **twice on the same branch is normal** — after more work lands, or
+after a `blocked` run is unblocked. Reviews are append-only, so round two writes
+`006-…` and leaves round one intact, and the approval gate fires again because
+every unattended run gets its own authorization.
+
+**Never wire it into CI or a git hook.** The judge writes code; a judge triggered
+by every push would commit to the branch unsupervised, on top of its own previous
+output, with no approval gate anywhere. CI runs the regression suite
+([`/quorum:add-ci`](#quorumadd-ci)); judgment stays on demand.
+
 **The approval gate.** If the plan's *Status* isn't `approved`, the skill shows
 you Intent, Acceptance criteria, Non-goals, and any unanswered Open questions, and
 asks. Unanswered questions matter more here than anywhere else: after this point

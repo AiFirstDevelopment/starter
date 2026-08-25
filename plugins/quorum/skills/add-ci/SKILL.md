@@ -53,6 +53,14 @@ documentation, not a gate.
 6. **Verify.** Confirm the workflow is valid (`gh workflow list`, or the host's
    linter) and tell the user it is unproven until it has run on a real PR.
 
+## What CI must not run
+
+CI runs the **regression suite** and nothing else from quorum. Never add
+`/quorum:pipeline`, `/quorum:2-build`, or `/quorum:4-quorum` to a workflow, a git
+hook, or any automatic trigger: those write code, and a judge triggered by every
+push would commit to the branch unsupervised on top of its own previous output.
+The pipeline is invoked by a human, per branch, after approving a plan.
+
 ## Rules
 
 - The CI command and the local command must be the same recipe. A gate that runs
