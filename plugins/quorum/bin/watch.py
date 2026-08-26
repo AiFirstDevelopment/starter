@@ -32,8 +32,82 @@ import json
 import os
 import sys
 import time
+from datetime import datetime
 
 TERMINAL = ('published',)
+
+
+def stamps(state):
+    """The timestamps state.py wrote, oldest first."""
+    log = state.get('log')
+    if not isinstance(log, list):
+        return []
+    out = []
+    for line in log:
+        head = str(line).split(' ', 1)[0]
+        try:
+            out.append(datetime.strptime(head, '%Y-%m-%dT%H:%M:%SZ'))
+        except ValueError:
+            continue
+    return out
+
+
+def completed_runs(work_root):
+    """How long every finished work item in this repo took, in seconds.
+
+    The only defensible basis for an estimate. Not a model, not an average of
+    somebody else's runs — what this repository has actually done before.
+    """
+    totals = []
+    try:
+        slugs = sorted(os.listdir(work_root))
+    except (IOError, OSError):
+        return totals
+    for slug in slugs:
+        raw = read(os.path.join(work_root, slug, 'state.json'))
+        if not raw:
+            continue
+        try:
+            state = json.loads(raw)
+        except ValueError:
+            continue
+        if not isinstance(state, dict) or state.get('stage') not in TERMINAL:
+            continue
+        marks = stamps(state)
+        if len(marks) >= 2:
+            totals.append(int((marks[-1] - marks[0]).total_seconds()))
+    return sorted(totals)
+
+
+def estimate(elapsed, totals):
+    """Minutes remaining, or an honest refusal.
+
+    Refuses below two completed runs rather than extrapolating from one. A single
+    data point is not a distribution, and a confident number drawn from it is the
+    kind of claim this pipeline exists to distrust.
+    """
+    if len(totals) < 2:
+        return 'no completed runs to compare against yet (%d recorded), so no estimate' % len(totals)
+
+    median = totals[len(totals) // 2]
+    low, high = totals[0], totals[-1]
+    span = 'previous %d runs took %s\u2013%s (median %s)' % (
+        len(totals), minutes(low), minutes(high), minutes(median))
+
+    if elapsed > high:
+        return '%s \u00b7 already longer than any of them, so no estimate stands'  % span
+    remaining = median - elapsed
+    if remaining <= 0:
+        return '%s \u00b7 past the median, somewhere in the tail' % span
+    return '%s \u00b7 roughly %s left if this one is typical' % (span, minutes(remaining))
+
+
+def minutes(seconds):
+    if seconds < 90:
+        return '%ds' % seconds
+    if seconds < 5400:
+        return '%dm' % round(seconds / 60.0)
+    return '%.1fh' % (seconds / 3600.0)
 
 
 def read(path):
@@ -68,6 +142,7 @@ def snapshot(work_dir):
     last = log[-1] if isinstance(log, list) and log else ''
 
     return {
+        'raw': state,
         'ticked': done,
         'steps': total,
         'reviews': reviews,
@@ -116,13 +191,28 @@ def main():
         sys.stderr.write('watch.py: no work item at %s\n' % opts.work_dir)
         return 2
 
+    work_root = os.path.dirname(os.path.normpath(opts.work_dir))
+    totals = completed_runs(work_root)
+
+    def progress_line(now):
+        marks = stamps(now.get('raw', {}))
+        if not marks:
+            return ''
+        elapsed = int((datetime.utcnow() - marks[0]).total_seconds())
+        if elapsed < 0:
+            return ''
+        return 'elapsed %s \u00b7 %s' % (minutes(elapsed), estimate(elapsed, totals))
+
     state = snapshot(opts.work_dir)
     start = state.copy()
     start.update({'ticked': -1, 'reviews': [], 'stage': '', 'last': '',
                   'verdict': False})
     for line in differences(start, state):
         print(line)
-        sys.stdout.flush()
+    hint = progress_line(state)
+    if hint:
+        print(hint)
+    sys.stdout.flush()
 
     if opts.once or state['stage'] in TERMINAL:
         return 0
@@ -131,8 +221,13 @@ def main():
     while time.time() < deadline:
         time.sleep(opts.interval)
         now = snapshot(opts.work_dir)
-        for line in differences(state, now):
-            print(line)
+        moved = differences(state, now)
+        if moved:
+            for line in moved:
+                print(line)
+            hint = progress_line(now)
+            if hint:
+                print(hint)
             sys.stdout.flush()
         state = now
         if state['stage'] in TERMINAL:

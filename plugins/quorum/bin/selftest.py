@@ -414,6 +414,40 @@ def test_watch():
         code, out, _ = run(['python3', WATCH, 'docs/work/nope', '--once'], cwd=repo)
         check('watch refuses a work item that does not exist', code == 2, out.strip())
 
+        # --- minutes remaining, or an honest refusal ------------------------
+        import importlib.util as _il
+        _spec = _il.spec_from_file_location('quorum_watch_est', WATCH)
+        est = _il.module_from_spec(_spec)
+        _spec.loader.exec_module(est)
+
+        check('one prior run is not a distribution',
+              'no estimate' in est.estimate(600, [1200]), est.estimate(600, [1200]))
+        check('no prior runs is not a distribution',
+              'no estimate' in est.estimate(600, []), est.estimate(600, []))
+
+        got = est.estimate(600, [1200, 1800, 2400])
+        check('a real estimate quotes the spread and what is left',
+              'roughly' in got and 'left' in got and 'previous 3 runs' in got, got)
+
+        got = est.estimate(9999, [1200, 1800, 2400])
+        check('running longer than every prior run withdraws the estimate',
+              'no estimate stands' in got, got)
+
+        got = est.estimate(1900, [1200, 1800, 2400])
+        check('past the median it says so rather than counting backwards',
+              'tail' in got and 'roughly' not in got, got)
+
+        # and it must read only finished runs
+        write(repo, 'docs/work/done-a/state.json', json.dumps({'stage': 'published',
+              'log': ['2026-01-01T09:00:00Z a', '2026-01-01T09:20:00Z b']}))
+        write(repo, 'docs/work/done-b/state.json', json.dumps({'stage': 'published',
+              'log': ['2026-01-01T09:00:00Z a', '2026-01-01T09:40:00Z b']}))
+        write(repo, 'docs/work/mid/state.json', json.dumps({'stage': 'building',
+              'log': ['2026-01-01T09:00:00Z a', '2026-01-01T12:00:00Z b']}))
+        totals = est.completed_runs(os.path.join(repo, 'docs/work'))
+        check('only finished runs count toward the estimate',
+              totals == [1200, 2400], 'got %s' % totals)
+
         # --once cannot test change detection: every invocation starts from a
         # fresh baseline, so it emits the same lines whether or not the diff
         # works. Exercise the comparison itself.

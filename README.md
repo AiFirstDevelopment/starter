@@ -230,12 +230,17 @@ Silence there means nothing moved, and during Review that is expected rather tha
 broken: six lenses read in parallel and write nothing until the panel is
 transcribed.
 
-**There is no estimated time to completion and there will not be one**, which is a
-design constraint rather than an omission. The workflow script cannot read a clock
-— `Date.now()` throws there deliberately, so a resumed run replays identically —
-so any figure it printed would be invented. `/quorum:history` reports how long
-previous items on this repo actually took, which is an expectation grounded in
-something that happened.
+**Minutes remaining, once there is something to base it on.** The watcher reports
+elapsed time and, after this repo has finished two or more runs, roughly how much
+is left — the median of what previous runs actually took, minus what this one has
+spent, quoted with the observed spread. Below two runs it says so and gives no
+number, because one data point is not a distribution. Past the longest previous
+run it withdraws the estimate rather than pretending.
+
+The workflow script still cannot produce one and never will: `Date.now()` throws
+there by design, so a resumed run replays identically. The watcher is an ordinary
+process with a clock, and it does arithmetic over durations this repository has
+recorded rather than forecasting from a model of how long work ought to take.
 
 ### The pull request is the deliverable
 
