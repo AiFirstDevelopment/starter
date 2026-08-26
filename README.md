@@ -255,6 +255,14 @@ is nobody to ask, and the builder must guess and record the guess. `1-plan` is
 forbidden from writing `approved` itself — a plan that approves its own execution
 defeats the only checkpoint in the system.
 
+An authorization covers one run, and only a run that actually starts spends it.
+Before the gate, the skill checks that the pipeline's five agents resolve, so a
+misinstalled plugin fails in front of you instead of after you have approved. If a
+run dies before the builder moves, *Status* goes back to `planned` and the gate
+re-arms. And a plan found at `approved` with `state.json` still at `approved` is a
+stale authorization from a run that never began — the skill asks again rather than
+reading it as consent.
+
 ### Give-up conditions
 
 An unattended pipeline must fail cleanly rather than grind or paper over:

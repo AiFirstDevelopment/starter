@@ -3,6 +3,11 @@
 # guard.py, the plan-lock hook, and the state recorder are what the pipeline's
 # promises now rest on. If one of them silently stops firing, every downstream
 # report becomes confidently wrong — so they get a test suite, and it runs here.
+#
+# It also checks that workflow/pipeline.js names agents that exist, under the
+# namespaced names plugin agents actually register with. That one is a static
+# check because it can be: three files in this repo have to agree, and when they
+# stopped agreeing the pipeline died at its first agent call, past the gate.
 name: selftest
 
 on:

@@ -47,6 +47,13 @@ const RECHECK_MODEL = models.recheck || 'sonnet'
 // change" a fact rather than a hope.
 const diffRange = (args && args.diffRange) || ''
 
+// Agents are addressed by their namespaced names — <plugin>:<agent>, the same
+// convention the skills use (/quorum:1-plan). A bare name does not resolve, and
+// the failure lands at the first agent() call: after the approval gate has been
+// spent, on a run that was never able to start. This prefix has been stripped
+// and re-applied by hand twice; selftest.py now checks every agentType against
+// plugin.json and agents/*.md so a third time fails CI instead of a run.
+
 const FINDINGS_SCHEMA = {
   type: 'object',
   required: ['lens', 'verdict', 'diffRange', 'findings'],
@@ -183,7 +190,7 @@ if (!skipBuild) {
       'When done, set Status in the plan to "built", record the state per the contract ' +
       '(stage "built", steps done, deviations, suite result, and head taken after your ' +
       'commit), and summarize what you built, what deviated, and what you left out.',
-    { label: 'build', phase: 'Build', agentType: 'quorum-builder' }
+    { label: 'build', phase: 'Build', agentType: 'quorum:quorum-builder' }
   )
   log(built ? 'Build complete.' : 'Build agent returned nothing — reviewing the tree as it stands.')
 } else {
@@ -222,7 +229,7 @@ const reviews = (
             {
               label: 'review:' + lens.key,
               phase: 'Review',
-              agentType: 'quorum-reviewer',
+              agentType: 'quorum:quorum-reviewer',
               schema: FINDINGS_SCHEMA,
             },
             models[lens.key] ? { model: models[lens.key] } : {}
@@ -260,7 +267,7 @@ await agent(
     'Preserve every finding exactly as given, including any that look trivial or wrong. Do ' +
     'not merge, reword, reorder, drop, add, or soften anything.\n\n' +
     'Findings JSON:\n```json\n' + JSON.stringify(reviews, null, 2) + '\n```',
-  { label: 'record-reviews', phase: 'Record', agentType: 'quorum-scribe' }
+  { label: 'record-reviews', phase: 'Record', agentType: 'quorum:quorum-scribe' }
 )
 
 // ---------------------------------------------------------------- adjudicate
@@ -330,7 +337,7 @@ while (pass < MAX_JUDGE_PASSES) {
     {
       label: 'judge:pass-' + pass,
       phase: 'Adjudicate',
-      agentType: 'quorum-judge',
+      agentType: 'quorum:quorum-judge',
       schema: VERDICT_SCHEMA,
       model: JUDGE_MODEL,
     }
@@ -387,7 +394,7 @@ if (skipRecheck) {
     {
       label: 'recheck:judge-diff',
       phase: 'Recheck',
-      agentType: 'quorum-reviewer',
+      agentType: 'quorum:quorum-reviewer',
       schema: FINDINGS_SCHEMA,
       model: RECHECK_MODEL,
     }
@@ -400,7 +407,7 @@ if (skipRecheck) {
         'exactly as given. Note in the file that this review covers the judge\'s own ' +
         'adjudication commits, which no other lens saw.\n\n' +
         'Findings JSON:\n```json\n' + JSON.stringify([recheck], null, 2) + '\n```',
-      { label: 'record-recheck', phase: 'Recheck', agentType: 'quorum-scribe' }
+      { label: 'record-recheck', phase: 'Recheck', agentType: 'quorum:quorum-scribe' }
     )
   }
 }
@@ -483,7 +490,7 @@ if (skipPublish) {
       '\n\nNever merge, approve, or enable auto-merge. Never force-push. If the host is ' +
       'unsupported or its CLI is unavailable, do not fail — print the title, body, and command ' +
       'you would have used and report that a human must publish.',
-    { label: 'publish', phase: 'Publish', agentType: 'quorum-publisher', schema: PUBLISH_SCHEMA }
+    { label: 'publish', phase: 'Publish', agentType: 'quorum:quorum-publisher', schema: PUBLISH_SCHEMA }
   )
 
   if (published && published.published) {

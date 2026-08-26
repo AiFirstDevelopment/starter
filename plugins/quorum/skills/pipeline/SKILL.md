@@ -54,16 +54,44 @@ Normal and supported. Review work is asked for after more work lands, or after a
 2. Confirm `docs/work/<slug>/plan.md` exists. If not, stop: the user runs
    `/quorum:1-plan` first. Never generate a plan here — the approval gate is
    meaningless if the same run wrote what it is approving.
-3. Read the plan and check its *Status*.
+3. Confirm the pipeline's agents are registered. The workflow calls five, by
+   their namespaced names: `quorum:quorum-builder`, `quorum:quorum-reviewer`,
+   `quorum:quorum-scribe`, `quorum:quorum-judge`, `quorum:quorum-publisher`.
+   You can see which agent types you have — check all five are there under
+   exactly those names. If any is missing or registers differently, stop and say
+   the plugin is not installed correctly. Do not go on to the gate.
+
+   This check sits above the gate deliberately. A wrong agent name does not
+   surface until the workflow reaches its first agent call, long after the user
+   has authorized the run — and an approval spent on a run that cannot start is
+   worse than no approval, because it leaves the plan sitting at `approved`,
+   where the next run reads it as consent nobody gave.
+
+4. Read the plan and check its *Status*.
 
 ## Step 2 — The approval gate
 
 This is the **only** point at which the user is consulted. Treat it seriously.
 
-If *Status* is already `approved`, proceed.
+If *Status* is already `approved`, check `state.json` before trusting it.
+`/quorum:1-plan` is forbidden from writing `approved`, so a plan that arrives
+here already approved has exactly one of two histories:
 
-Otherwise, show the user the plan's **Intent**, **Acceptance criteria**,
-**Non-goals**, and any **Open questions**, then ask plainly whether to proceed.
+- **`stage` is anything other than `approved`, or there is no `state.json`** — a
+  human wrote it into the plan by hand. That is the one legitimate way it gets
+  there before this step. Proceed.
+- **`stage` is `approved` and nothing moved past it** — a previous run was
+  authorized and never got as far as building. That authorization is **stale**:
+  it bought nothing, and no human has looked at this plan since. Treat the plan as
+  unapproved and ask below, saying plainly that the last authorized run never
+  started and what went wrong with it.
+
+Telling those two apart is what stops a crashed run from leaving the gate open
+behind it.
+
+Otherwise — a stale authorization included — show the user the plan's **Intent**,
+**Acceptance criteria**, **Non-goals**, and any **Open questions**, then ask
+plainly whether to proceed.
 Make clear what they are authorizing: an unattended run that will write code,
 review it, and apply fixes to the working tree with no further checkpoint.
 
@@ -171,6 +199,23 @@ cover a small follow-up commit. It re-pays for the entire run to look at a diff
 one round covers.
 
 ## Step 5 — Report
+
+### If the run never started
+
+A workflow that dies before the builder does anything — no commits, `state.json`
+still at `approved`, no `verdict.md` — spent the user's authorization on nothing.
+Put the gate back before reporting:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/bin/state.py" docs/work/<slug> \
+  '{"stage":"planned","log":"run died before build; approval reset, gate re-armed"}'
+```
+
+and set *Status* back to `planned` in `plan.md`. Then say what failed. Do not
+relaunch on the same approval — the user authorized one run, and they should see
+why the first one died before deciding to spend another.
+
+### What the run concluded
 
 Lead with whatever needs a human. In order:
 

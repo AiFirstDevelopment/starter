@@ -6,6 +6,11 @@ pipeline's promises now rest on. Prose about them is worth nothing; this builds
 throwaway repositories, breaks each rule on purpose, and checks that the rule
 fires — and, just as importantly, that legitimate edits are still allowed.
 
+It also checks the one part of the orchestrator a machine can settle without a
+live run: that pipeline.js calls its agents by names that actually register.
+Everything else in that script needs real agents to exercise. This does not, and
+it is the failure that has already cost two runs.
+
     python3 selftest.py [-v]
 
 Exit 0 all passed, 1 something regressed.
@@ -13,6 +18,7 @@ Exit 0 all passed, 1 something regressed.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -22,6 +28,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 GUARD = os.path.join(HERE, 'guard.py')
 HOOK = os.path.join(HERE, 'plan-lock-hook.py')
 STATE = os.path.join(HERE, 'state.py')
+
+PLUGIN = os.path.dirname(HERE)
+MANIFEST = os.path.join(PLUGIN, '.claude-plugin', 'plugin.json')
+AGENTS_DIR = os.path.join(PLUGIN, 'agents')
+PIPELINE = os.path.join(PLUGIN, 'workflow', 'pipeline.js')
 
 PLAN = """# Plan: demo
 
@@ -320,6 +331,79 @@ def test_state():
         shutil.rmtree(repo, ignore_errors=True)
 
 
+# ------------------------------------------------------------------ the agents
+
+def frontmatter_name(path):
+    """The `name:` field from a markdown file's YAML frontmatter, or None."""
+    with open(path) as handle:
+        lines = handle.read().split('\n')
+    if not lines or lines[0].strip() != '---':
+        return None
+    for line in lines[1:]:
+        if line.strip() == '---':
+            break
+        if line.startswith('name:'):
+            return line.split(':', 1)[1].strip()
+    return None
+
+
+def test_agents():
+    """The orchestrator names agents that exist, the way they actually register.
+
+    Nothing else covers pipeline.js. The guard checks what the pipeline produces,
+    not the script that runs it, so a wrong agentType stays invisible until a run
+    reaches the first agent() call — which is after the approval gate, on work
+    that then cannot start.
+
+    Plugin agents register namespaced, <plugin>:<agent>. That prefix has twice
+    been dropped from this script and hand-patched back into the installed plugin
+    cache, where the next `claude plugin update` throws it away. Three files have
+    to agree and all three are in the repo, so nothing here needs a model or a
+    live run.
+    """
+    with open(MANIFEST) as handle:
+        plugin = json.load(handle)['name']
+
+    declared = {}
+    for entry in sorted(os.listdir(AGENTS_DIR)):
+        if not entry.endswith('.md'):
+            continue
+        name = frontmatter_name(os.path.join(AGENTS_DIR, entry))
+        check('%s declares a frontmatter name' % entry, name is not None)
+        if name is None:
+            continue
+        check('%s: frontmatter name matches filename' % entry, name == entry[:-3],
+              'frontmatter says %r' % name)
+        declared[name] = entry
+    check('agents/ is not empty', bool(declared))
+
+    with open(PIPELINE) as handle:
+        source = handle.read()
+    # The trailing delimiter matters: it means a literal and nothing else. Any
+    # concatenation or lookup fails to match and shows up as a count mismatch
+    # below, rather than half-matching and quietly narrowing what is checked.
+    used = re.findall(r"agentType:\s*'([^']*)'\s*[,}\n]", source)
+
+    # A computed agentType would slip past the regex and take the whole check
+    # with it, silently. Every site must be a plain literal for this to mean
+    # anything.
+    check('every agentType in pipeline.js is a plain string literal',
+          len(used) == source.count('agentType:'),
+          '%d agentType keys, %d literals — a computed name escapes this check'
+          % (source.count('agentType:'), len(used)))
+    check('pipeline.js calls agents at all', bool(used))
+
+    registered = set('%s:%s' % (plugin, name) for name in declared)
+    for ref in sorted(set(used)):
+        check('pipeline.js agentType %r resolves' % ref, ref in registered,
+              'nothing registers under that name; expected one of %s' % sorted(registered))
+
+    for name in sorted(declared):
+        check('agent %s is wired into the pipeline' % name,
+              '%s:%s' % (plugin, name) in used,
+              '%s defines it, pipeline.js never calls it' % declared[name])
+
+
 def main():
     code, _, _ = run(['git', '--version'])
     if code != 0:
@@ -330,6 +414,7 @@ def main():
     test_default_branch()
     test_hook()
     test_state()
+    test_agents()
 
     failed = [r for r in results if not r[1]]
     print('')
