@@ -1,9 +1,17 @@
 # How quorum compares
 
-An honest look at where this pipeline sits against the tools it overlaps with,
-and where it is still weaker than its own prose suggests.
+Quorum makes an AI write down what it's going to build — in terms you can actually
+check — before it writes any code, then holds it to that plan mechanically instead
+of asking nicely. All you do is approve the plan and read the pull request, both
+things you already know how to do: you never have to supervise an agent or decide
+when to trust one, which is the part most developers don't understand and are
+right to be wary of.
 
-Last updated after the repo-lifetime work (v0.8.0).
+That is the claim. What follows is an honest look at where this pipeline actually
+sits against the tools it overlaps with, and where it is still weaker than its own
+prose suggests.
+
+Last updated after the history work (v0.10.0).
 
 ## The landscape
 
@@ -31,7 +39,7 @@ the critic is measured against is left to you.
 | Reviewers | one pass | self-check | 6 blind lenses, then a judge |
 | Runs the software | no | sometimes | yes, a dedicated lens |
 | Reviews the fixer's own edits | n/a | no | yes, bounded, read-only |
-| Record left behind | inline comments | commit log | append-only reviews + verdict + state |
+| Record left behind | inline comments | commit log | append-only reviews + verdict + state, queryable per change |
 | Rules enforced by | prompt | prompt | **prompt, hook, and CI** |
 | Survives a repo's lifetime | yes, by construction | n/a, per task | yes, but it had to be built |
 
