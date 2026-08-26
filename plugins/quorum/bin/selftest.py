@@ -112,6 +112,8 @@ def make_repo():
     git(repo, 'commit', '-q', '-m', 'base')
     git(repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
     git(repo, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
+    # host-detection reads this; GitHub is the case most rules assume
+    git(repo, 'remote', 'add', 'origin', 'https://github.com/acme/demo.git')
     git(repo, 'checkout', '-q', '-b', 'feature/demo')
 
     code, out, _ = run(['python3', GUARD, '--hash', 'docs/work/demo/plan.md'], cwd=repo)
@@ -300,6 +302,7 @@ def test_lifetime():
     case('deleting the whole enforcement layer is caught',
          vendor_then_delete_both, 'enforcement')
     case('a repo that never vendored is left alone', lambda r: None, None)
+
     case('a vendored guard edited in place is caught', vendor_then_edit, 'vendored')
     case('a vendored guard frozen at an older rule set is caught',
          lambda r: (write(r, '.quorum/guard.py', "VERSION = '0'\n# old rules\n"),
@@ -309,6 +312,98 @@ def test_lifetime():
          lambda r: (write(r, '.quorum/guard.py', '# no stamp here\n'),
                     write(r, '.github/workflows/quorum-guard.yml', 'x\n')),
          'vendored')
+
+    def as_gitlab(repo):
+        git(repo, 'remote', 'set-url', 'origin', 'https://gitlab.com/acme/demo.git')
+
+    def gitlab_vendored_unwired(repo):
+        as_gitlab(repo)
+        write(repo, '.quorum/guard.py', open(GUARD).read())
+
+    def gitlab_vendored_wired(repo):
+        gitlab_vendored_unwired(repo)
+        write(repo, '.gitlab-ci.yml',
+              'quorum-guard:\n  script:\n    - python3 .quorum/guard.py --base x\n')
+
+    def unknown_host_vendored(repo):
+        git(repo, 'remote', 'set-url', 'origin', 'git@example.invalid:acme/demo.git')
+        write(repo, '.quorum/guard.py', open(GUARD).read())
+
+    case('a GitLab repo whose vendored guard nothing runs is caught',
+         gitlab_vendored_unwired, 'enforcement')
+    case('a GitLab repo with a .gitlab-ci.yml job is left alone',
+         gitlab_vendored_wired, None)
+    case('an unrecognised host is not told its CI is wrong',
+         unknown_host_vendored, None)
+
+    def edited_same_version(repo):
+        source = open(GUARD).read()
+        write(repo, '.github/workflows/quorum-guard.yml', 'name: quorum guard\n')
+        write(repo, '.quorum/guard.py', source + '\n# tweaked, version left alone\n')
+
+    case('a vendored guard edited without touching its version is caught',
+         edited_same_version, 'vendored')
+
+    # Firing is not enough here: the whole reason that branch exists is the
+    # wording. "rule set 2, this checker is 2" reads as a bug in the checker
+    # rather than a fact about the copy, so assert what it actually says.
+    repo = make_repo()
+    try:
+        edited_same_version(repo)
+        git(repo, 'add', '-A')
+        git(repo, 'commit', '-q', '-m', 'edit the vendored copy')
+        code, out, _ = run(['python3', GUARD, '--base', 'origin/main', '--json'], cwd=repo)
+        try:
+            detail = ' '.join(v['detail'] for v in json.loads(out)['violations']
+                              if v['rule'] == 'vendored')
+        except (ValueError, KeyError):
+            detail = ''
+        check('a same-version edit is reported as an edit, not as being behind',
+              'same rule set' in detail and 'is rule set' not in detail,
+              detail[:180] or out[:180])
+    finally:
+        shutil.rmtree(repo, ignore_errors=True)
+
+
+# ------------------------------------------------------------------- install
+
+def test_install_ci():
+    """--install-ci wires up only what it knows how to wire up.
+
+    The checker is host-agnostic and always lands. The runner is GitHub Actions,
+    so writing it into a GitLab repository and reporting success would leave a
+    gate that never runs — worse than no gate, because the green tick is read as
+    enforcement.
+    """
+    def install(repo, url):
+        if url:
+            git(repo, 'remote', 'set-url', 'origin', url)
+        else:
+            git(repo, 'remote', 'remove', 'origin')
+        return run(['python3', GUARD, '--install-ci'], cwd=repo)
+
+    for label, url, wants_flow, needle in (
+        ('github', 'https://github.com/acme/demo.git', True, 'quorum-guard.yml'),
+        ('gitlab', 'https://gitlab.com/acme/demo.git', False, '.gitlab-ci.yml'),
+        ('an unknown host', '', False, 'neither GitHub nor GitLab'),
+    ):
+        repo = make_repo()
+        try:
+            code, out, err = install(repo, url)
+            check('install-ci succeeds on %s' % label, code == 0, err.strip())
+            check('install-ci vendors the checker on %s' % label,
+                  os.path.exists(os.path.join(repo, '.quorum/guard.py')), out[:200])
+            wrote = os.path.exists(
+                os.path.join(repo, '.github/workflows/quorum-guard.yml'))
+            check('install-ci writes a workflow on %s: %s' % (label, wants_flow),
+                  wrote == wants_flow, 'wrote=%s' % wrote)
+            check('install-ci says what to do on %s' % label, needle in out, out[:300])
+            if not wants_flow:
+                check('install-ci does not claim a gate on %s' % label,
+                      'NO CI JOB WAS WRITTEN' in out, out[:300])
+        finally:
+            shutil.rmtree(repo, ignore_errors=True)
+
 
 
 # ------------------------------------------------------------ the version stamp
@@ -690,6 +785,7 @@ def main():
     test_version()
     test_frontmatter()
     test_history()
+    test_install_ci()
 
     failed = [r for r in results if not r[1]]
     print('')

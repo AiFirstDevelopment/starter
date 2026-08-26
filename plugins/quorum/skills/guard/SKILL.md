@@ -58,14 +58,20 @@ That vendors `guard.py` to `.quorum/guard.py` and writes
 `.github/workflows/quorum-guard.yml`. It vendors rather than referencing the
 plugin because CI runners have no plugin installed.
 
-**This half is GitHub-only, and it does not announce that.** The workflow it
-writes is GitHub Actions and `--check-gate` queries the GitHub API. On a GitLab
-remote `--install-ci` will still write that file and it will simply never run —
-so say so rather than reporting the gate installed. The vendored `.quorum/guard.py`
-itself is host-agnostic; what is missing is a `.gitlab-ci.yml` job invoking it
-with `--base "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"`, which has to be
-written by hand. The rest of the pipeline is unaffected: the publisher speaks
-`glab` and opens merge requests.
+**The runner it writes is GitHub Actions, and it now says so itself.** The
+checker is host-agnostic and always gets vendored; the workflow only lands on a
+GitHub remote. Anywhere else `--install-ci` writes no CI job, prints
+`NO CI JOB WAS WRITTEN`, and shows what to add instead — a ready-to-paste
+`.gitlab-ci.yml` job on GitLab, or the one command to run on a host it does not
+recognise. Report that outcome as given. It is not a failure and the vendored
+checker is still worth committing; what it is not is a gate.
+
+`--check-gate` is GitHub-only for the same reason and says so on other hosts
+rather than blaming a missing `gh`. On GitLab you make the job required in
+*Settings → Merge requests*, and nothing here can verify that for you.
+
+The rest of the pipeline is unaffected: the publisher speaks `glab` and opens
+merge requests.
 
 **Re-run it whenever the plugin updates.** The vendored copy is frozen at the
 rules it was written with, so a repo that adopted a year ago is still enforcing

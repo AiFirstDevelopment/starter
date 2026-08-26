@@ -12,7 +12,8 @@ of. These are the ones a machine can settle, so a machine settles them:
   evidence       files and lines cited as proof of a met criterion actually exist
   branch         work is on a work branch, and on the one the plan was written on
   vendored       a .quorum/guard.py copy has not drifted from this checker
-  enforcement    the vendored checker and its workflow are still there, and paired
+  enforcement    the vendored checker is still there, and something the host
+                 actually runs is wired to it
 
 Usage:
   guard.py [--work-dir docs/work/<slug>] [--base <ref>] [--json] [--check-gate]
@@ -36,13 +37,50 @@ import sys
 # adopting repo to re-vendor. Bump it when the rules change — drift is detected
 # by comparing file contents, so this number is for the error message and for
 # `--version` on a vendored copy, not for the check itself.
-VERSION = '2'
+VERSION = '3'
 
 # What --install-ci writes. Git reports paths with forward slashes, and these are
 # compared against that as well as against the filesystem, so they are literals
 # rather than os.path.join.
 VENDORED_GUARD = '.quorum/guard.py'
 VENDORED_FLOW = '.github/workflows/quorum-guard.yml'
+GITLAB_FLOW = '.gitlab-ci.yml'
+
+GITLAB_JOB = '''quorum-guard:
+  image: python:3
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+  variables:
+    GIT_DEPTH: 0
+  script:
+    - git fetch origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+    - python3 .quorum/guard.py --base "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+'''
+
+
+def detect_host():
+    """github, gitlab, or unknown, from the origin remote.
+
+    The CI half of this tool is GitHub-specific and nothing used to say so, which
+    is the worst way to be wrong: --install-ci would write a GitHub Actions file
+    into a GitLab repository, report success, and leave a gate that never runs.
+    """
+    url = (git_out('remote', 'get-url', 'origin') or '').strip().lower()
+    if not url:
+        return 'unknown'
+    if 'github.com' in url:
+        return 'github'
+    if 'gitlab' in url:
+        return 'gitlab'
+    return 'unknown'
+
+
+def git_out(*args):
+    try:
+        out = subprocess.check_output(('git',) + args, stderr=subprocess.DEVNULL)
+    except (subprocess.CalledProcessError, OSError):
+        return None
+    return out.decode('utf-8', 'replace')
 
 REQUIREMENT_SECTIONS = ['Intent', 'Acceptance criteria', 'Non-goals']
 
@@ -387,12 +425,24 @@ class Guard(object):
         # someone edited in place and cries wolf on every release that leaves
         # this file alone.
         stamped = vendored_version(vendored) or 'unstamped'
-        self.fail(
-            'vendored',
-            '%s does not match this checker (it is rule set %s, this is %s); CI has '
-            'been enforcing whatever it was frozen with. Re-run guard.py '
-            '--install-ci and commit the result' % (vendored, stamped, VERSION),
-        )
+        if stamped == VERSION:
+            # Same rule set, different bytes: this is an edit in place, or a copy
+            # taken from a different build. Saying "rule set 2 vs 2" would read as
+            # a bug in the checker rather than a fact about the copy.
+            self.fail(
+                'vendored',
+                '%s carries the same rule set (%s) as this checker but differs from '
+                'it; it has been edited in place or vendored from another build. '
+                'Re-run guard.py --install-ci and commit the result'
+                % (vendored, VERSION),
+            )
+        else:
+            self.fail(
+                'vendored',
+                '%s is rule set %s, this checker is %s; CI has been enforcing the '
+                'older set. Re-run guard.py --install-ci and commit the result'
+                % (vendored, stamped, VERSION),
+            )
 
     def check_enforcement(self):
         """The enforcement layer is still installed, and still joined up.
@@ -428,13 +478,40 @@ class Guard(object):
 
         have_guard = os.path.exists(VENDORED_GUARD)
         have_flow = os.path.exists(VENDORED_FLOW)
+
         if have_flow and not have_guard:
             self.fail(
                 'enforcement',
                 '%s runs %s, which is not in the repository; the job fails on every '
                 'push' % (VENDORED_FLOW, VENDORED_GUARD),
             )
-        elif have_guard and not have_flow:
+            return
+
+        if not have_guard:
+            return
+
+        # A vendored checker nothing runs is enforcement in name only. What counts
+        # as "runs it" depends on the host, so ask rather than assume GitHub: on
+        # GitLab the job lives in .gitlab-ci.yml, and on a host this does not know
+        # there is no file to look for and a complaint would be noise.
+        if have_flow:
+            return
+        host = detect_host()
+        if host == 'gitlab':
+            wired = False
+            if os.path.exists(GITLAB_FLOW):
+                try:
+                    with open(GITLAB_FLOW) as handle:
+                        wired = VENDORED_GUARD in handle.read()
+                except (IOError, OSError):
+                    wired = False
+            if not wired:
+                self.fail(
+                    'enforcement',
+                    '%s is vendored but no %s job runs it; add one (guard.py '
+                    '--install-ci prints it)' % (VENDORED_GUARD, GITLAB_FLOW),
+                )
+        elif host == 'github':
             self.fail(
                 'enforcement',
                 '%s is vendored but %s is gone, so nothing runs it; re-run '
@@ -563,6 +640,15 @@ def check_gate():
     unticked box looks identical to a working gate from in here unless
     somebody asks.
     """
+    host = detect_host()
+    if host != 'github':
+        print('gate: cannot tell — this check speaks only to the GitHub API, and '
+              'this repository\'s origin is %s.'
+              % ('GitLab' if host == 'gitlab' else 'neither GitHub nor GitLab'))
+        print('      Verify by hand that the quorum guard job is required before a')
+        print('      merge request can merge.')
+        return 0
+
     try:
         out = subprocess.check_output(
             ['gh', 'api', 'repos/{owner}/{repo}/rulesets', '--jq', '.[].name'],
@@ -608,27 +694,59 @@ def check_gate():
 
 
 def install_ci():
+    """Vendor the checker, and wire it up only where this tool knows how.
+
+    The checker itself is host-agnostic and always gets written. The runner is
+    not: the workflow here is GitHub Actions. Writing it into a GitLab repository
+    and reporting success would leave a gate that never runs, which is worse than
+    no gate, so the host decides what happens and the output says what did not.
+    """
     target = os.path.join('.quorum', 'guard.py')
     if not os.path.isdir('.quorum'):
         os.makedirs('.quorum')
     with open(__file__) as src, open(target, 'w') as dst:
         dst.write(src.read())
     os.chmod(target, 0o755)
+    print('Wrote %s (rule set %s).' % (target, VERSION))
 
-    flow_dir = os.path.join('.github', 'workflows')
-    if not os.path.isdir(flow_dir):
-        os.makedirs(flow_dir)
-    flow = os.path.join(flow_dir, 'quorum-guard.yml')
-    with open(flow, 'w') as handle:
-        handle.write(CI_WORKFLOW)
+    host = detect_host()
 
-    print('Wrote %s (rule set %s) and %s' % (target, VERSION, flow))
-    print('')
-    print('Commit both, then make "quorum guard" a required status check in your')
-    print('branch protection settings — that is what turns it into a real gate.')
-    print('Until then the workflow reports and nothing blocks a merge on it.')
-    print('')
-    print('Check whether it is live with:  guard.py --check-gate')
+    if host == 'github':
+        flow_dir = os.path.join('.github', 'workflows')
+        if not os.path.isdir(flow_dir):
+            os.makedirs(flow_dir)
+        with open(VENDORED_FLOW, 'w') as handle:
+            handle.write(CI_WORKFLOW)
+        print('Wrote %s.' % VENDORED_FLOW)
+        print('')
+        print('Commit both, then make "quorum guard" a required status check in your')
+        print('branch protection settings — that is what turns it into a real gate.')
+        print('Until then the workflow reports and nothing blocks a merge on it.')
+        print('')
+        print('Check whether it is live with:  guard.py --check-gate')
+    else:
+        print('')
+        print('NO CI JOB WAS WRITTEN. The workflow this installs is GitHub Actions,')
+        if host == 'gitlab':
+            print('and this repository\'s origin is GitLab. The checker above is')
+            print('host-agnostic; what is missing is a job that runs it. Add this to')
+            print('%s and commit both:' % GITLAB_FLOW)
+            print('')
+            for line in GITLAB_JOB.rstrip('\n').split('\n'):
+                print('    ' + line)
+            print('')
+            print('Then make it a required job in Settings > Merge requests, which is')
+            print('what turns it into a gate. --check-gate cannot verify that for you;')
+            print('it only speaks to the GitHub API.')
+        else:
+            print('and this repository\'s origin is neither GitHub nor GitLab (or has')
+            print('no origin at all). The checker above is host-agnostic; what is')
+            print('missing is a job in your CI that runs, on every merge request:')
+            print('')
+            print('    python3 .quorum/guard.py --base "origin/<target-branch>"')
+            print('')
+            print('Make that job required. Nothing here can do it or check it.')
+
     print('')
     print('Re-run this whenever the plugin updates. The vendored copy is frozen at')
     print('the rules it was written with, and the guard reports a "vendored"')

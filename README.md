@@ -674,12 +674,14 @@ old codebase either: it counts test cases and skip markers as a **delta against
 the base branch**, so a suite that already carries legacy `skip`s trips nothing —
 only skips your change introduces do.
 
-**One gap worth knowing before you start.** The CI half is GitHub-only:
-`--install-ci` writes a GitHub Actions workflow and `--check-gate` asks the GitHub
-API. On GitLab you still get the pipeline and the publisher — which does speak
-`glab` and opens merge requests — but you would write the equivalent
-`.gitlab-ci.yml` job calling `.quorum/guard.py` yourself. Everything except that
-one workflow file is host-agnostic.
+**One thing to know before you start.** The CI runner this installs is GitHub
+Actions. On any other host `--install-ci` vendors the checker, writes no CI job,
+says `NO CI JOB WAS WRITTEN`, and prints what to add instead — a ready-to-paste
+`.gitlab-ci.yml` job on GitLab. It will not report a gate it did not install, and
+the `enforcement` rule knows the difference too: on GitLab it looks for the job in
+`.gitlab-ci.yml` rather than demanding a workflow file that does not belong there.
+Everything but that one runner is host-agnostic, the publisher included — it
+speaks `glab` and opens merge requests.
 
 ```text
 This repo should adopt the "starter" Claude Code plugins. Here is what they are
