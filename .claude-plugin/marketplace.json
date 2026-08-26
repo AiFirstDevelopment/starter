@@ -6,26 +6,41 @@
   },
   "metadata": {
     "description": "Starter kit of reusable Claude Code skills to pull into new repos: an autonomous delivery pipeline and a behavioral regression-testing discipline.",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "plugins": [
     {
       "name": "quorum",
       "source": "./plugins/quorum",
       "description": "Plan, build, multi-lens review, and adjudication - run step by step or autonomously from an approved plan, ending in a pull request.",
-      "version": "0.2.0",
-      "author": { "name": "Joel Stevick" },
+      "version": "0.3.0",
+      "author": {
+        "name": "Joel Stevick"
+      },
       "category": "workflow",
-      "tags": ["planning", "review", "adjudication", "pipeline", "automation"]
+      "tags": [
+        "planning",
+        "review",
+        "adjudication",
+        "pipeline",
+        "automation"
+      ]
     },
     {
       "name": "tests",
       "source": "./plugins/tests",
       "description": "Behavioral regression tests against the assembled application, proven able to fail, and gated in CI.",
       "version": "0.2.0",
-      "author": { "name": "Joel Stevick" },
+      "author": {
+        "name": "Joel Stevick"
+      },
       "category": "testing",
-      "tags": ["testing", "regression", "ci", "coverage"]
+      "tags": [
+        "testing",
+        "regression",
+        "ci",
+        "coverage"
+      ]
     }
   ]
 }

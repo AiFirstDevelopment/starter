@@ -91,10 +91,27 @@ Plan: `docs/work/<slug>/plan.md` · Reviews: `docs/work/<slug>/reviews/`
 Omit empty sections rather than writing "None" into them. Keep it scannable; the
 detail lives in the verdict.
 
+## Before you publish
+
+Run the guard and act on it:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/bin/guard.py"
+```
+
+Exit `1` means a rule the pipeline says it does not break was broken. **Open the
+pull request as a draft, lead the body with the violations verbatim, and do not
+soften them.** They are not findings to weigh — nobody may adjudicate them away
+at this stage, least of all you. Publish anyway rather than failing: a draft PR
+naming the violation is how a human finds out.
+
+If the guard cannot run, say so in the body rather than implying it passed.
+
 ## Finish
 
 Record the state per the contract's `state.json` section: stage `published`, and
-a `pr` object with the URL and whether it is a draft. If you could not publish,
+a `pr` object with the URL and whether it is a draft, and a `guard` object with
+`clean` and the violation count. If you could not publish,
 record no `pr` and say why in the log line — a state file claiming a PR that does
 not exist is worse than one that admits the branch is unpublished.
 

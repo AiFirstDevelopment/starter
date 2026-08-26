@@ -50,7 +50,7 @@ counts, outcomes, and commit SHAs. Never prose, never a copy of the artifacts.
   "branch": "feature/retry-failed-webhooks",
   "stage": "adjudicated",
   "updated": "2026-08-25T21:14:03Z",
-  "plan":    { "acs": 4, "steps": 6, "open": 1 },
+  "plan":    { "acs": 4, "steps": 6, "open": 1, "requirementsHash": "3f9a1c…" },
   "build":   { "stepsDone": 6, "deviations": 2, "suite": "green", "head": "a1b2c3d" },
   "review":  { "round": 1, "lenses": ["correctness", "spec-fidelity", "security",
                "simplicity", "test-quality"], "missing": [], "findings": 7,
@@ -72,6 +72,15 @@ counts, outcomes, and commit SHAs. Never prose, never a copy of the artifacts.
 `recheck` is the read-only pass over the judge's own adjudication commits — the
 one part of the branch no lens saw. Absent means it did not run, which is not the
 same as clean.
+
+`plan.requirementsHash` fingerprints *Intent*, *Acceptance criteria*, and
+*Non-goals* as they stood when the plan was written, so `/quorum:guard` can prove
+nobody moved the target. `/quorum:1-plan` records it once. **No later step may
+re-record it** — a step that rewrites the baseline to match what it changed has
+defeated the check entirely.
+
+`guard` is the result of the mechanical rule check at publish time: `clean` and a
+violation count.
 
 ### `head` is the load-bearing field
 

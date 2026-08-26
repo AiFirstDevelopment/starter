@@ -155,6 +155,9 @@ Two footnotes worth reporting when they apply:
   its dimension is unexamined. `behavior` missing means nobody ran the software.
 - **No `recheck` means the judge's own commits were never reviewed.** Absent is
   not clean. Say so, and that `/quorum:pipeline` is what covers them.
+- **`guard` violations outrank everything else you report.** A broken rule is not
+  a finding to weigh; say what broke and that `/quorum:guard` names it. Absent
+  `guard` means the check never ran, which is not a pass.
 - **`ready` alongside escalations or unmet criteria is a contradiction** in the
   judge's own output. Report it as suspicious rather than smoothing it over.
 

@@ -37,6 +37,9 @@ Every design decision here is aimed at breaking that loop:
   criterion met when it isn't.
 - **Tests must be proven able to fail.** A test that passes against broken code is
   worse than no test, because it is a merge gate you trust.
+- **The rules that can be mechanical are mechanical.** A prohibition written in a
+  prompt is one an agent can reason its way around. The ones a machine can settle
+  are checked by a machine — and in CI, where no agent runs at all.
 
 Once a plan is approved the whole thing runs unattended, so these stop being good
 practice and start being the only safeguards there are. That is why the judge's
@@ -268,6 +271,9 @@ An unattended pipeline must fail cleanly rather than grind or paper over:
 **A run that ends `blocked` with a clear reason is this pipeline working.** The
 failure mode it exists to prevent is a green suite bought by deleting a test.
 
+For how this compares to PR review bots and autonomous coding agents — and where
+it is still weaker than it sounds — see [docs/comparison.md](docs/comparison.md).
+
 ## The steps
 
 ### `/quorum:1-plan`
@@ -346,6 +352,43 @@ disappear instead of solving it:
 
 It ends by running the suite and **is not done until that suite is green**, then
 writes `verdict.md`.
+
+### `/quorum:guard`
+
+Everything else here is a rule stated in a prompt, and a prompt is a rule an
+agent can talk itself out of at 2am with a red suite and nobody awake. These are
+the ones that do not depend on cooperation:
+
+| Rule | Violation |
+|---|---|
+| `requirements` | *Intent*, *Acceptance criteria*, or *Non-goals* changed since planning |
+| `tests` | a test file deleted, cases removed, or a new `skip` / `only` marker |
+| `reviews` | an existing review file modified or deleted |
+| `verdict` | `ready` over a red suite, with open escalations, or with an unmet criterion |
+| `evidence` | a criterion marked met cites a file that does not exist |
+| `branch` | work item artifacts on the default branch |
+
+`only` earns its own row: a single `it.only(...)` disables every other test in the
+file while the run still reports green — the quietest way to buy a passing suite,
+and invisible in a summary line reading "42 passed".
+
+**Three layers, and only the last one is a real guarantee:**
+
+1. **A `PreToolUse` hook** refuses any edit that would change the plan's
+   requirements, at the moment it is attempted. Ticking checkboxes and editing
+   *Approach*, *Steps*, or *Build notes* stay allowed. It fails open — a broken
+   hook must not wedge every edit in the repo.
+2. **The publisher runs the guard** before opening a PR, and a violation forces a
+   draft whose body leads with it.
+3. **CI runs it where no agent exists.** `--install-ci` vendors the checker to
+   `.quorum/guard.py` and writes the workflow. Make `quorum guard` a **required
+   status check** in branch protection and a violation blocks the merge no matter
+   what the verdict claims. That last step is a repo-admin action in the hosting
+   UI; until it is done, the workflow reports and nothing more.
+
+A guard violation is **not a finding**. Findings are claims a judge weighs and may
+reject. These are rules the pipeline states it does not break, so nothing in the
+pipeline is permitted to adjudicate one away.
 
 ### `/quorum:status`
 
@@ -517,6 +560,9 @@ quorum — a delivery pipeline:
   /quorum:4-quorum Judge the plan, the diff, and all reviews. Accept, reject, or
                    escalate each finding; apply accepted fixes; end with a green
                    suite; write docs/work/<slug>/verdict.md.
+  /quorum:guard    Run the mechanical rule checks (requirements unchanged, no test
+                   weakened, reviews append-only, verdict self-consistent, evidence
+                   real) and optionally install them as a CI gate.
   /quorum:pipeline After I approve a plan, run all of that unattended and open a
                    pull request at the end. Plan approval is the only human gate.
   /quorum:status   Report which of those states this branch is in and the single

@@ -161,10 +161,13 @@ Lead with whatever needs a human. In order:
 4. `lensesMissing` — a lens that failed to run is an unexamined dimension, not a
    clean bill of health. Say which one and that its risk is uncovered. `behavior`
    missing means nobody ran the software.
-5. `judgeDiffBlockers` — blockers found in the judge's own adjudication commits.
+5. **Guard violations** — a rule was broken, not a finding to weigh. Report these
+   above everything else the run concluded; a verdict cannot vouch for a run that
+   broke one of the rules the verdict is written under.
+6. `judgeDiffBlockers` — blockers found in the judge's own adjudication commits.
    These are deliberately left unfixed: the pipeline will not let the judge grade
    its own repairs. Name them and say they need a human.
-6. Then the ordinary summary: outcome, findings, accepted vs rejected, follow-ups,
+7. Then the ordinary summary: outcome, findings, accepted vs rejected, follow-ups,
    and the path to `verdict.md`.
 
 If `outcome` is `ready` **and** there are escalations or unmet criteria, that is a
@@ -175,7 +178,9 @@ smoothing it over.
 
 Worth stating to the user when they ask why a run came back blocked:
 
-- It will not disable, skip, or weaken a test to turn the suite green.
+- It will not disable, skip, or weaken a test to turn the suite green — and since
+  that promise is only a sentence in a prompt, `/quorum:guard` checks it
+  mechanically and CI checks it where no agent can reach.
 - It will not move acceptance criteria to make the code fit them.
 - It will not mark a criterion met when it is not.
 - It gives the judge at most two passes to reach a green suite, then stops and

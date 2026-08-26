@@ -429,9 +429,17 @@ if (skipPublish) {
             'the pipeline does not let the judge grade its own repairs.'
           : 'Open it as a DRAFT: the verdict is not clean. Lead the body with what is failing ' +
             'or unresolved, and prefix the title with "[blocked]" if the outcome is blocked.') +
+      '\n\nBefore publishing, run the quorum guard (bin/guard.py in the quorum plugin, or ' +
+      '.quorum/guard.py if this repo vendors it). It checks the rules a machine can settle: ' +
+      'requirements unchanged, no test deleted or skipped, reviews append-only, verdict not ' +
+      'self-contradictory, cited evidence real. If it exits non-zero, open the PR as a DRAFT ' +
+      'and lead the body with the violations verbatim — they are rules, not findings, and ' +
+      'nothing at this stage may adjudicate them away. If it cannot run, say so rather than ' +
+      'implying it passed.' +
       '\n\nWhen the PR is open, record the state per the contract: stage "published", a pr ' +
-      'object with the URL and draft flag, and a recheck object with the judge-diff findings ' +
-      'and blockers from the summary above. If you could not publish, record no pr and say ' +
+      'object with the URL and draft flag, a recheck object with the judge-diff findings ' +
+      'and blockers from the summary above, and a guard object with clean and the violation ' +
+      'count. If you could not publish, record no pr and say ' +
       'why in the log line.' +
       '\n\nNever merge, approve, or enable auto-merge. Never force-push. If the host is ' +
       'unsupported or its CLI is unavailable, do not fail — print the title, body, and command ' +

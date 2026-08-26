@@ -84,11 +84,17 @@ This is the only step that may create a branch. Every later step still stops.
    run without inferring it:
 
    ```bash
+   HASH=$(python3 "${CLAUDE_PLUGIN_ROOT}/bin/guard.py" --hash docs/work/<slug>/plan.md)
    python3 "${CLAUDE_PLUGIN_ROOT}/bin/state.py" docs/work/<slug> \
      '{"slug":"<slug>","branch":"<branch>","stage":"planned",
-       "plan":{"acs":4,"steps":6,"open":1},
+       "plan":{"acs":4,"steps":6,"open":1,"requirementsHash":"'"$HASH"'"},
        "log":"1-plan planned 4 ACs, 6 steps, 1 open question"}'
    ```
+
+   `requirementsHash` fingerprints *Intent*, *Acceptance criteria*, and
+   *Non-goals*. Recording it here is what lets `/quorum:guard` prove later that
+   nobody moved the target — including you. Record it **after** the plan's
+   requirements are final, and never re-record it to make a later check pass.
 
 7. **Stop.** Report the path and summarize the acceptance criteria and any open
    questions. Do not begin building.
