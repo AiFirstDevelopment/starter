@@ -408,11 +408,21 @@ the ones that do not depend on cooperation:
 | `verdict` | `ready` over a red suite, with open escalations, or with an unmet criterion |
 | `coverage` | a criterion in the plan missing from the verdict, or one the verdict invented |
 | `evidence` | a criterion marked met cites a file, or a line, that does not exist |
-| `branch` | work item artifacts on the default branch |
+| `branch` | work item artifacts on the default branch, or on a branch other than the one the plan was written on |
+| `vendored` | `.quorum/guard.py` no longer matches the checker it was vendored from |
 
 `only` earns its own row: a single `it.only(...)` disables every other test in the
 file while the run still reports green — the quietest way to buy a passing suite,
 and invisible in a summary line reading "42 passed".
+
+`vendored` earns its own row for the same reason, one repo-lifetime later. CI runs
+a **copy** of `guard.py`, because a CI runner has no plugin installed — and a copy
+is frozen at the day it was made. Adopt at one version, update the plugin for a
+year, and CI keeps enforcing the rules it started with while reporting green
+throughout. A stale checker is worse than no checker, because the green tick reads
+as enforcement. The comparison is on file contents rather than version numbers, so
+it also catches a vendored copy somebody edited in place, and stays quiet on
+releases that do not touch the checker at all.
 
 **Three layers, and only the last one is a real guarantee:**
 

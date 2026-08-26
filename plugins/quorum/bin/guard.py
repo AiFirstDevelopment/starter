@@ -10,12 +10,14 @@ of. These are the ones a machine can settle, so a machine settles them:
   verdict        the verdict does not contradict itself
   coverage       every acceptance criterion in the plan is accounted for
   evidence       files and lines cited as proof of a met criterion actually exist
-  branch         work is not happening on the default branch
+  branch         work is on a work branch, and on the one the plan was written on
+  vendored       a .quorum/guard.py copy has not drifted from this checker
 
 Usage:
   guard.py [--work-dir docs/work/<slug>] [--base <ref>] [--json] [--check-gate]
   guard.py --hash docs/work/<slug>/plan.md      # baseline for the requirements rule
   guard.py --install-ci                         # vendor into the repo + CI workflow
+  guard.py --version                            # which rule set this copy enforces
 
 Exit: 0 clean, 1 violations found, 2 could not run.
 """
@@ -27,6 +29,13 @@ import os
 import re
 import subprocess
 import sys
+
+# Which rule set this copy enforces. Deliberately NOT the plugin version: a
+# release that changes a skill and leaves this file alone must not tell every
+# adopting repo to re-vendor. Bump it when the rules change — drift is detected
+# by comparing file contents, so this number is for the error message and for
+# `--version` on a vendored copy, not for the check itself.
+VERSION = '1'
 
 REQUIREMENT_SECTIONS = ['Intent', 'Acceptance criteria', 'Non-goals']
 
@@ -319,8 +328,67 @@ class Guard(object):
                 'work item artifacts on default branch "%s"; the pipeline writes to a '
                 'work branch' % current,
             )
+            return
+
+        # The plan and the branch can come apart: a work item planned on one
+        # branch and then built on another writes its artifacts under a slug that
+        # names something else. Reviews, verdict, and PR all inherit the wrong
+        # name, and nothing downstream notices because every file is internally
+        # consistent.
+        planned = (self.state().get('branch') or '').strip()
+        if planned and planned != current:
+            self.fail(
+                'branch',
+                'plan was written on branch "%s" but work is on "%s"; either move '
+                'to that branch or, if it was renamed, update "branch" in '
+                'state.json to match' % (planned, current),
+            )
+
+    def check_vendored(self):
+        """A vendored .quorum/guard.py that no longer matches this checker.
+
+        --install-ci copies this file into the repo so CI can run it where no
+        plugin is installed. That copy is then frozen. A repo that adopted at
+        0.2.0 goes on enforcing 0.2.0's rules while the plugin gains new ones,
+        and CI reports green throughout — so the gate looks live and is checking
+        a rule set nobody has read in months. A stale checker is worse than an
+        absent one, because the green tick gets read as enforcement.
+
+        Only the plugin's own copy can notice this: it is the only one that sees
+        both versions at once. When this file *is* the vendored copy, there is
+        nothing to compare against.
+        """
+        vendored = os.path.join('.quorum', 'guard.py')
+        if not os.path.exists(vendored):
+            return
+        if os.path.abspath(vendored) == os.path.abspath(__file__):
+            return
+
+        try:
+            with open(vendored) as handle:
+                theirs = handle.read()
+            with open(__file__) as handle:
+                mine = handle.read()
+        except (IOError, OSError) as exc:
+            self.fail('vendored', 'could not read %s (%s)' % (vendored, exc))
+            return
+
+        if theirs == mine:
+            return
+
+        # Contents, not versions. A version comparison misses a vendored copy
+        # someone edited in place and cries wolf on every release that leaves
+        # this file alone.
+        stamped = vendored_version(vendored) or 'unstamped'
+        self.fail(
+            'vendored',
+            '%s does not match this checker (it is rule set %s, this is %s); CI has '
+            'been enforcing whatever it was frozen with. Re-run guard.py '
+            '--install-ci and commit the result' % (vendored, stamped, VERSION),
+        )
 
     def run(self):
+        self.check_vendored()
         self.check_requirements()
         self.check_tests()
         self.check_reviews()
@@ -393,6 +461,19 @@ def has_content(text, heading):
             stripped = re.sub(r'^[-*]\s*\.\.\.\s*$', '', stripped, flags=re.M).strip()
             return bool(stripped)
     return False
+
+
+def vendored_version(path):
+    """The VERSION a guard.py copy declares, or None if it declares none."""
+    try:
+        with open(path) as handle:
+            for line in handle:
+                match = re.match(r"^VERSION\s*=\s*['\"]([^'\"]+)['\"]", line)
+                if match:
+                    return match.group(1)
+    except (IOError, OSError):
+        return None
+    return None
 
 
 def resolve_work_dir(explicit):
@@ -486,13 +567,17 @@ def install_ci():
     with open(flow, 'w') as handle:
         handle.write(CI_WORKFLOW)
 
-    print('Wrote %s and %s' % (target, flow))
+    print('Wrote %s (rule set %s) and %s' % (target, VERSION, flow))
     print('')
     print('Commit both, then make "quorum guard" a required status check in your')
     print('branch protection settings — that is what turns it into a real gate.')
     print('Until then the workflow reports and nothing blocks a merge on it.')
     print('')
     print('Check whether it is live with:  guard.py --check-gate')
+    print('')
+    print('Re-run this whenever the plugin updates. The vendored copy is frozen at')
+    print('the rules it was written with, and the guard reports a "vendored"')
+    print('violation once it no longer matches the plugin it came from.')
     return 0
 
 
@@ -504,7 +589,12 @@ def main():
     parser.add_argument('--install-ci', action='store_true')
     parser.add_argument('--hash', metavar='PLAN')
     parser.add_argument('--check-gate', action='store_true')
+    parser.add_argument('--version', action='store_true')
     opts = parser.parse_args()
+
+    if opts.version:
+        print(VERSION)
+        return 0
 
     if opts.check_gate:
         return check_gate()

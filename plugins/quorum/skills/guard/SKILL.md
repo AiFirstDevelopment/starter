@@ -58,6 +58,13 @@ That vendors `guard.py` to `.quorum/guard.py` and writes
 `.github/workflows/quorum-guard.yml`. It vendors rather than referencing the
 plugin because CI runners have no plugin installed.
 
+**Re-run it whenever the plugin updates.** The vendored copy is frozen at the
+rules it was written with, so a repo that adopted a year ago is still enforcing
+that year-old set — and reporting green while it does. The guard raises a
+`vendored` violation as soon as `.quorum/guard.py` stops matching the checker it
+came from, which is the only signal you get; nothing about a stale copy looks
+wrong from the outside. `guard.py --version` says which rule set a copy carries.
+
 Commit both, then **make `quorum guard` a required status check** in the
 repository's branch protection settings. Until that box is ticked the workflow
 reports and nothing more; after it, a violation blocks the merge no matter what

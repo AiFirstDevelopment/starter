@@ -134,6 +134,21 @@ def read(repo, rel):
         return handle.read()
 
 
+def guard_version():
+    """The VERSION literal guard.py stamps itself with."""
+    with open(GUARD) as handle:
+        for line in handle:
+            match = re.match(r"^VERSION\s*=\s*'([^']+)'", line)
+            if match:
+                return match.group(1)
+    return None
+
+
+def record_branch(repo, name):
+    """Record the branch a plan was written on, as 1-plan does."""
+    run(['python3', STATE, 'docs/work/demo', json.dumps({'branch': name})], cwd=repo)
+
+
 def guard_rules(repo):
     """Run the guard and return the set of rules that fired."""
     git(repo, 'add', '-A')
@@ -233,6 +248,60 @@ def test_guard():
          lambda r: write(r, 'docs/work/demo/verdict.md',
                          VERDICT_OK.replace('tests/widget.test.js:1', 'tests/widget.test.js:900')),
          'evidence')
+
+
+def test_lifetime():
+    """The two ways a long-lived repo drifts out from under the checker.
+
+    Both are invisible at the moment they happen and stay invisible: a work item
+    whose branch no longer matches its plan writes internally consistent files
+    under the wrong name, and a vendored .quorum/guard.py goes on reporting green
+    against whichever rules it was frozen with.
+    """
+    def drift(repo):
+        record_branch(repo, 'feature/demo')
+        git(repo, 'checkout', '-q', '-b', 'feature/something-else')
+
+    case('a branch that no longer matches the plan is caught', drift, 'branch')
+    case('the branch the plan names is allowed',
+         lambda r: record_branch(r, 'feature/demo'), None)
+    case('no recorded branch is not a violation',
+         lambda r: None, None)
+
+    def vendor(repo):
+        """What --install-ci writes: this exact file, byte for byte."""
+        write(repo, '.quorum/guard.py', open(GUARD).read())
+
+    def vendor_then_edit(repo):
+        vendor(repo)
+        with open(os.path.join(repo, '.quorum/guard.py'), 'a') as handle:
+            handle.write('\n# someone tuned the rules here and nowhere else\n')
+
+    case('a faithfully vendored guard is allowed', vendor, None)
+    case('a vendored guard edited in place is caught', vendor_then_edit, 'vendored')
+    case('a vendored guard frozen at an older rule set is caught',
+         lambda r: write(r, '.quorum/guard.py', "VERSION = '0'\n# old rules\n"),
+         'vendored')
+    case('an unstamped vendored guard is caught',
+         lambda r: write(r, '.quorum/guard.py', '# no stamp here\n'), 'vendored')
+
+
+# ------------------------------------------------------------ the version stamp
+
+def test_version():
+    """guard.py carries a readable rule-set stamp, and reports it.
+
+    The stamp is deliberately not the plugin version — drift is detected by
+    comparing contents, so tying the two would make every unrelated release
+    demand a re-vendor. What must hold is that the stamp exists and that a
+    vendored copy can be interrogated for it without a plugin present.
+    """
+    stamped = guard_version()
+    check('guard.py declares a VERSION', stamped is not None)
+
+    code, out, _ = run(['python3', GUARD, '--version'])
+    check('guard.py --version reports it', code == 0 and out.strip() == (stamped or ''),
+          'exit %s, printed %r, constant is %r' % (code, out.strip(), stamped))
 
 
 def test_default_branch():
@@ -415,6 +484,8 @@ def main():
     test_hook()
     test_state()
     test_agents()
+    test_lifetime()
+    test_version()
 
     failed = [r for r in results if not r[1]]
     print('')
