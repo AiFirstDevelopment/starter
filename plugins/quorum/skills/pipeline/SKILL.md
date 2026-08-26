@@ -74,21 +74,24 @@ Normal and supported. Review work is asked for after more work lands, or after a
 
 This is the **only** point at which the user is consulted. Treat it seriously.
 
-If *Status* is already `approved`, check `state.json` before trusting it.
-`/quorum:1-plan` is forbidden from writing `approved`, so a plan that arrives
-here already approved has exactly one of two histories:
+If *Status* is already `approved`, check `state.json` before trusting it. Two
+histories put it there and they are opposites:
 
-- **`stage` is anything other than `approved`, or there is no `state.json`** — a
-  human wrote it into the plan by hand. That is the one legitimate way it gets
-  there before this step. Proceed.
-- **`stage` is `approved` and nothing moved past it** — a previous run was
-  authorized and never got as far as building. That authorization is **stale**:
-  it bought nothing, and no human has looked at this plan since. Treat the plan as
-  unapproved and ask below, saying plainly that the last authorized run never
-  started and what went wrong with it.
+- **`stage` is `approved`, or `planned`, or there is no `state.json`** — an
+  authorization nobody has spent. Either bare `/quorum:1-plan` held the gate and
+  the user said yes, or they approved the plan by hand. **Proceed without asking
+  again.** Asking twice for one decision is not twice the safety; it teaches
+  people to click through the only checkpoint in the system.
+- **`stage` is `building` and no `build` was ever recorded** — a run was
+  authorized, launched, and died before the builder did anything. That
+  authorization is **stale**: it bought nothing, and nobody has looked at this
+  plan since. Treat the plan as unapproved and ask below, saying plainly that the
+  last run never got past launch and what went wrong with it.
 
-Telling those two apart is what stops a crashed run from leaving the gate open
-behind it.
+The distinction is only available because Step 4 records `building` at launch. An
+approval that has been spent and an approval that has not look identical on disk
+otherwise, and assuming the worse one costs a real decision every time a plan
+waits.
 
 Otherwise — a stale authorization included — show the user the plan's **Intent**,
 **Acceptance criteria**, **Non-goals**, and any **Open questions**, then ask
@@ -143,6 +146,14 @@ Workflow({
   scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflow/pipeline.js",
   args: { slug: "<slug>", diffRange: "<fork-point>...HEAD" }
 })
+```
+
+Record the launch first. This is what separates an authorization that has been
+spent from one that has not, and it is the only moment either is knowable:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/bin/state.py" docs/work/<slug> \
+  '{"stage":"building","log":"pipeline launched"}'
 ```
 
 Pass `args.skipBuild: true` only when the code is already written and the user
@@ -204,7 +215,7 @@ one round covers.
 ### If the run never started
 
 A workflow that dies before the builder does anything — no commits, `state.json`
-still at `approved`, no `verdict.md` — spent the user's authorization on nothing.
+still at `building`, no `verdict.md` — spent the user's authorization on nothing.
 Put the gate back before reporting:
 
 ```bash

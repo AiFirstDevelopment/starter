@@ -1,7 +1,7 @@
 ---
 name: 1-plan
 description: Step 1 of the quorum pipeline. Settles the work branch with the user - naming it, or starting a fresh one off the base when the current branch already carries a finished change - then investigates the request and writes intent, acceptance criteria, and non-goals to docs/work/<slug>/plan.md. Writes no code.
-argument-hint: [what you want built]
+argument-hint: [what to build - omit to approve the existing plan]
 disable-model-invocation: true
 ---
 
@@ -37,6 +37,44 @@ like, and once a service exists most changes are that.
 
 This is the only step that may create or switch a branch. Every later step still
 stops.
+
+## Called with no description
+
+`/quorum:1-plan` with nothing after it is not a request to plan something. There
+is nothing to plan. It means the user has come back to a plan that already exists,
+and the only useful thing to do with an existing plan is decide about it.
+
+So: resolve the slug, read `docs/work/<slug>/plan.md`, and **hold the approval
+gate here** rather than sending them to another command to be asked the same
+question.
+
+1. If no plan exists for this slug, say so and ask what they want built. There is
+   nothing to approve and nothing to plan from.
+
+2. If the plan's *Status* is already past `planned`, do not re-ask. Report where
+   it stands and point at `/quorum:status`.
+
+3. Otherwise show **Intent**, **Acceptance criteria**, **Non-goals**, and any
+   unanswered **Open questions**, then ask plainly whether to proceed. Make clear
+   what approval authorizes: an unattended run that will write code, review it,
+   apply fixes, and open a pull request with no further checkpoint.
+
+   Surface unanswered *Open questions* now. After this there is nobody to ask, and
+   the builder has to guess and record the guess.
+
+4. On approval — and only on clear approval — set *Status* to `approved` and
+   record it:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/bin/state.py" docs/work/<slug> \
+     '{"stage":"approved","log":"plan approved by user via 1-plan"}'
+   ```
+
+   Then **offer to start the pipeline**, and run `/quorum:pipeline` if they say
+   yes. It will not ask again: a plan at `approved` whose recorded stage is also
+   `approved` is an authorization nobody has spent yet, which is exactly this.
+
+   On anything short of clear approval, stop and change nothing.
 
 ## Procedure
 
@@ -152,6 +190,10 @@ stops.
 
 7. **Stop.** Report the path and summarize the acceptance criteria and any open
    questions. Do not begin building.
+
+   Do not ask them to approve it now. You wrote it moments ago; a decision taken
+   in that breath is a rubber stamp. Tell them to read it and come back — bare
+   `/quorum:1-plan` will hold the gate, or `/quorum:pipeline` will.
 
    The user then either drives the steps by hand (`/quorum:2-build`,
    `/quorum:3-review`, `/quorum:4-quorum`) or runs `/quorum:pipeline`, which
@@ -300,10 +342,16 @@ A three-line change gets no diagram. Do not draw one to look thorough.
 
 ## Status lifecycle
 
-*Status* moves `planned` → `approved` → `built` → `adjudicated`. You write
-`planned`. Only the user approves, via `/quorum:pipeline`'s approval gate or by
-editing the plan. **Never write `approved` yourself** — a plan that approves
-itself defeats the only checkpoint in the system.
+*Status* moves `planned` → `approved` → `built` → `adjudicated`. When you write a
+plan you write `planned`, and **never `approved` in that same run** — a plan that
+approves its own execution defeats the only checkpoint in the system, and a human
+shown a plan the moment it was generated is being asked to rubber-stamp rather
+than to decide.
+
+`approved` is only ever written on an explicit human yes, to a plan that already
+existed before this invocation: the no-description mode above, `/quorum:pipeline`'s
+gate, or the user editing the plan themselves. The prohibition is on approving
+your own fresh work, not on carrying a decision the user actually made.
 
 ## Rules
 

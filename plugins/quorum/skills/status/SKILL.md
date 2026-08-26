@@ -116,8 +116,8 @@ Read down the table and report the **first** row that matches. Every row from
 |---|---|---|
 | On the base branch | Branch is `main`/`master`, or the repo has no commits | `/quorum:1-plan <what you want built>` — it names the branch with you and creates it |
 | Not started | No `docs/work/<slug>/` | `/quorum:1-plan <what you want built>` |
-| Planned | `stage` `planned` | Settle open questions, then `/quorum:pipeline` (it holds the approval gate) or `/quorum:2-build` to drive by hand |
-| Approved | `stage` `approved` | `/quorum:pipeline`, or `/quorum:2-build` |
+| Planned | `stage` `planned` | Settle open questions, then `/quorum:1-plan` bare to approve it and start, or `/quorum:pipeline` (it holds the same gate), or `/quorum:2-build` to drive by hand |
+| Approved | `stage` `approved` | `/quorum:pipeline` — it will not re-ask, the authorization is unspent — or `/quorum:2-build` |
 | Part built | Some `S` steps ticked, some not | `/quorum:2-build` — it resumes from the first unticked step |
 | Built | `stage` `built`, no `reviews/` | `/quorum:3-review` |
 | Reviewed | `reviews/` populated, no `verdict.md` | `/quorum:4-quorum` |

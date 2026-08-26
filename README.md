@@ -254,15 +254,27 @@ regression suite (`/tests:ci`); judgment stays on demand.
 
 ### The approval gate
 
-If the plan's *Status* isn't `approved`, the skill shows you Intent, Acceptance
-criteria, Non-goals, and any unanswered Open questions, and asks — making clear
+If the plan's *Status* isn't `approved`, you are shown Intent, Acceptance
+criteria, Non-goals, and any unanswered Open questions, and asked — making clear
 you are authorizing an unattended run that will write code, apply fixes, push, and
 open a PR.
 
+**Two commands hold that gate, and it is the same gate.** `/quorum:pipeline` asks
+before it runs. Bare `/quorum:1-plan`, with no description after it, asks about
+the plan already on disk and offers to start the pipeline when you say yes —
+because coming back to an existing plan can only mean deciding about it. Approving
+in one place means the other does not ask again: one decision, asked once. Being
+asked twice for the same decision is not twice the safety, it is training to click
+through the only checkpoint in the system.
+
+What no command will do is approve a plan it wrote in the same breath. A plan you
+are shown the instant it was generated is a rubber stamp, not a decision, so
+`1-plan` writing a fresh plan tells you to read it and come back. The rule is
+against approving your own new work, not against carrying a decision you actually
+made.
+
 Unanswered questions matter more here than anywhere else: after this point there
-is nobody to ask, and the builder must guess and record the guess. `1-plan` is
-forbidden from writing `approved` itself — a plan that approves its own execution
-defeats the only checkpoint in the system.
+is nobody to ask, and the builder must guess and record the guess.
 
 An authorization covers one run, and only a run that actually starts spends it.
 Before the gate, the skill checks that the pipeline's five agents resolve, so a
@@ -662,6 +674,9 @@ quorum — a delivery pipeline:
                    finished change — then investigate the request and write
                    docs/work/<slug>/plan.md capturing Intent, falsifiable Acceptance
                    criteria, Non-goals, and Open questions. Writes no code.
+                   Run bare, with no description, it instead shows me the plan
+                   already on disk, asks whether I approve it, and offers to start
+                   the pipeline.
   /quorum:2-build  Implement that plan, ticking off steps and recording deviations.
                    Never edits Intent, Acceptance criteria, or Non-goals.
   /quorum:3-review Review the diff in fresh context from six independent lenses
