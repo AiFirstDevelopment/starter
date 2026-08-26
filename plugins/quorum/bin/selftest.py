@@ -28,6 +28,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 GUARD = os.path.join(HERE, 'guard.py')
 HOOK = os.path.join(HERE, 'plan-lock-hook.py')
 STATE = os.path.join(HERE, 'state.py')
+HISTORY = os.path.join(HERE, 'history.py')
 
 PLUGIN = os.path.dirname(HERE)
 MANIFEST = os.path.join(PLUGIN, '.claude-plugin', 'plugin.json')
@@ -378,6 +379,133 @@ def test_frontmatter():
               not unknown, 'unrecognised (silently ignored): %s' % unknown)
 
 
+# ----------------------------------------------------------------- the history
+
+def test_history():
+    """The record of what a repository has been asked to do, read back.
+
+    Everything here is derived from git and the artifacts, never from file
+    mtimes — a checkout rewrites those, which is the same reason state.json
+    exists. So the cases check provenance specifically: the right author on the
+    right item, ordering by when a plan was actually committed, and an
+    uncommitted plan reported as having no author rather than being given one.
+    """
+    repo = make_repo()
+    try:
+        def commit_as(name, email, when, message):
+            env = {'GIT_AUTHOR_NAME': name, 'GIT_AUTHOR_EMAIL': email,
+                   'GIT_AUTHOR_DATE': when, 'GIT_COMMITTER_NAME': name,
+                   'GIT_COMMITTER_EMAIL': email, 'GIT_COMMITTER_DATE': when}
+            merged = dict(os.environ)
+            merged.update(env)
+            subprocess.run(['git', 'add', '-A'], cwd=repo, stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE)
+            subprocess.run(['git', 'commit', '-q', '-m', message], cwd=repo, env=merged,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        # an older item by someone else, committed before the demo plan
+        write(repo, 'docs/work/older/plan.md',
+              PLAN.replace('# Plan: demo', '# Plan: An earlier change'))
+        commit_as('Ada Lovelace', 'ada@example.com', '2020-01-01T09:00:00+00:00',
+                  'plan the earlier change\n\nCo-Authored-By: Some Agent <a@b.c>\n')
+
+        # and one nobody has committed
+        write(repo, 'docs/work/inflight/plan.md',
+              PLAN.replace('# Plan: demo', '# Plan: Not committed yet'))
+
+        code, out, err = run(['python3', HISTORY, '--json'], cwd=repo)
+        check('history runs', code == 0, err.strip() or out.strip())
+        try:
+            items = json.loads(out)
+        except ValueError:
+            check('history emits JSON', False, out[:200])
+            return
+
+        by_slug = dict((i['slug'], i) for i in items)
+        check('history lists every planned item',
+              set(by_slug) == set(['demo', 'older', 'inflight']),
+              'listed %s' % sorted(by_slug))
+
+        check('history reads the plan title',
+              by_slug.get('older', {}).get('title') == 'An earlier change',
+              'got %r' % by_slug.get('older', {}).get('title'))
+        check('history attributes an item to whoever committed its plan',
+              by_slug.get('older', {}).get('author') == 'Ada Lovelace',
+              'got %r' % by_slug.get('older', {}).get('author'))
+        check('history reports co-authoring agents separately from the author',
+              by_slug.get('older', {}).get('agents') == ['Some Agent'],
+              'got %r' % by_slug.get('older', {}).get('agents'))
+        check('history does not credit the wrong author',
+              by_slug.get('demo', {}).get('author') == 'selftest',
+              'got %r' % by_slug.get('demo', {}).get('author'))
+
+        check('history marks an uncommitted plan as unattributed',
+              by_slug.get('inflight', {}).get('committed') is False
+              and not by_slug.get('inflight', {}).get('author'),
+              'got %r' % by_slug.get('inflight'))
+
+        committed = [i['slug'] for i in items if i['committed']]
+        check('history orders by when the plan was committed, oldest first',
+              committed == ['older', 'demo'], 'got %s' % committed)
+        check('history sorts the uncommitted item last',
+              items[-1]['slug'] == 'inflight', 'got %s' % [i['slug'] for i in items])
+
+        # --- where to find the request ------------------------------------
+        # recorded by the publisher
+        write(repo, 'docs/work/shipped/plan.md',
+              PLAN.replace('# Plan: demo', '# Plan: A shipped change'))
+        run(['python3', STATE, 'docs/work/shipped',
+             json.dumps({'stage': 'published', 'branch': 'feature/shipped',
+                         'pr': {'url': 'https://github.com/o/r/pull/12', 'draft': True}})],
+            cwd=repo)
+        commit_as('Ada Lovelace', 'ada@example.com', '2021-01-01T09:00:00+00:00',
+                  'plan a shipped change')
+
+        # squash-merged: the number rides on the commit, the branch appears nowhere
+        write(repo, 'docs/work/squashed/plan.md',
+              PLAN.replace('# Plan: demo', '# Plan: A squash-merged change'))
+        commit_as('Ada Lovelace', 'ada@example.com', '2021-02-01T09:00:00+00:00',
+                  'A squash-merged change (#42)')
+
+        # gitlab names it in the merge commit, which need not touch these files
+        write(repo, 'docs/work/mr/plan.md',
+              PLAN.replace('# Plan: demo', '# Plan: A merge-requested change')
+                  + '\n- **Branch:** feature/mr\n')
+        commit_as('Ada Lovelace', 'ada@example.com', '2021-03-01T09:00:00+00:00',
+                  'plan a merge-requested change')
+        write(repo, 'unrelated.txt', 'x\n')
+        commit_as('Ada Lovelace', 'ada@example.com', '2021-03-02T09:00:00+00:00',
+                  "Merge branch 'feature/mr'\n\nSee merge request grp/proj!7\n")
+
+        code, out, _ = run(['python3', HISTORY, '--json'], cwd=repo)
+        prs = dict((i['slug'], i['pr']) for i in json.loads(out))
+
+        check('history reports a request recorded by the publisher',
+              prs.get('shipped', {}).get('url') == 'https://github.com/o/r/pull/12'
+              and prs['shipped']['source'] == 'state.json', 'got %r' % prs.get('shipped'))
+        check('history carries the draft flag through',
+              prs.get('shipped', {}).get('draft') is True, 'got %r' % prs.get('shipped'))
+        check('history recovers a squash-merged request from the commit',
+              prs.get('squashed', {}).get('ref') == '#42'
+              and prs['squashed']['source'] == 'merge commit', 'got %r' % prs.get('squashed'))
+        check('history recovers a GitLab merge request from the merge commit',
+              prs.get('mr', {}).get('ref') == '!7', 'got %r' % prs.get('mr'))
+        check('history claims no request when there is none',
+              prs.get('older', {}).get('ref') == '', 'got %r' % prs.get('older'))
+
+        code, out, _ = run(['python3', HISTORY], cwd=repo)
+        check('the table shows the request column',
+              code == 0 and '#42' in out and '!7' in out, out[:300])
+
+        code, out, _ = run(['python3', HISTORY, '--author', 'ada'], cwd=repo)
+        check('history filters by author',
+              code == 0 and 'An earlier change' in out and 'Plan: demo' not in out
+              and 'demo' not in out.split('\n')[2] if len(out.split('\n')) > 2 else False,
+              out[:200])
+    finally:
+        shutil.rmtree(repo, ignore_errors=True)
+
+
 def test_default_branch():
     repo = make_repo()
     try:
@@ -561,6 +689,7 @@ def main():
     test_lifetime()
     test_version()
     test_frontmatter()
+    test_history()
 
     failed = [r for r in results if not r[1]]
     print('')

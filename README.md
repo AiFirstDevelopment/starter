@@ -494,6 +494,34 @@ It departs from the artifact contract on one point, deliberately. Where the
 contract says to stop and ask for a slug when the branch is the default branch,
 status reports that as the state it is — naming that case is the whole point.
 
+### `/quorum:history`
+
+Every change this repository has planned, oldest first — the title, who planned
+it, when, where it got to, and where to find its pull or merge request. Read-only.
+
+`docs/work/` accumulates one directory per change and never loses one, so the
+record already exists; this reads it back rather than adding bookkeeping.
+
+Two columns are easy to misread, so they are worth stating plainly. **PLANNED** is
+the author date of the commit that first added `plan.md`, never a file mtime — a
+checkout rewrites mtimes, which is the reason `state.json` exists at all. **BY** is
+that commit's git author, which is whoever's git config made the commit rather
+than whoever decided the work should happen; in this pipeline the builder, judge,
+and publisher all commit under the repository owner's config, so on a solo repo
+it is one name repeated. Agent involvement is reported separately, from
+`Co-Authored-By` trailers, because the author field cannot carry it.
+
+The **PR** column prefers what the publisher recorded in `state.json`. Failing
+that it infers one from the history — a squash merge's `(#12)`, a merge commit's
+`Merge pull request #12 from …`, or GitLab's `See merge request grp/proj!12` —
+and says which, because an inferred number is a lead and a recorded URL is a fact.
+
+```bash
+history.py --full        # include each plan's Intent
+history.py --author ada  # by author or email
+history.py --json        # for anything you want to compute over
+```
+
 ### Closing an escalation
 
 The one loop the pipeline cannot close alone. It hands back a decision, the run
@@ -644,6 +672,9 @@ quorum — a delivery pipeline:
                    pull request at the end. Plan approval is the only human gate.
   /quorum:status   Report which of those states this branch is in and the single
                    next command to run. Reads only; changes nothing.
+  /quorum:history  List every change this repo has planned, oldest first — what it
+                   was, who planned it, when, where it got to, and where to find
+                   its pull or merge request. Reads only.
 
 tests — testing discipline:
   /tests:add       Behavioral tests against the fully assembled app through its
@@ -731,6 +762,7 @@ starter/
 │   │   │   └── quorum-publisher.md
 │   │   ├── bin/                  # the enforcement layer — no model involved
 │   │   │   ├── guard.py          # the mechanical rules; vendored into CI
+│   │   │   ├── history.py        # every work item ever planned, from git
 │   │   │   ├── plan-lock-hook.py # PreToolUse refusal of requirement edits
 │   │   │   ├── state.py          # the state.json recorder
 │   │   │   └── selftest.py       # breaks every rule on purpose, asserts it fires
@@ -744,6 +776,7 @@ starter/
 │   │       ├── 3-review/SKILL.md
 │   │       ├── 4-quorum/SKILL.md
 │   │       ├── guard/SKILL.md
+│   │       ├── history/SKILL.md
 │   │       └── status/SKILL.md
 │   └── tests/
 │       ├── .claude-plugin/plugin.json
