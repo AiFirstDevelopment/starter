@@ -183,6 +183,30 @@ Do not re-implement the orchestration by hand and do not spawn the agents
 yourself — the script exists so the sequence is identical every run and so a
 failed run can be resumed rather than re-paid for.
 
+### Watch it while it runs
+
+The workflow is detached: launching it returns a run id and this session goes
+quiet until the whole thing finishes. Its progress tree lives behind
+`/workflows`, which you have to go and look at. Arm a watcher so the run reports
+into the conversation instead:
+
+```
+Monitor({
+  command: 'python3 "${CLAUDE_PLUGIN_ROOT}/bin/watch.py" docs/work/<slug>',
+  description: 'quorum progress for <slug>',
+  persistent: true,
+})
+```
+
+One line per observable change — a step ticked, reviews recorded, the stage
+moving, `verdict.md` written — read from the repository's own files. It stops
+itself when the item reaches `published`.
+
+**Silence means nothing moved**, and during Review that is expected rather than
+broken: six lenses read in parallel and write nothing until the panel is
+transcribed, so the watcher reports the panel starting and finishing and nothing
+in between. Say that when you arm it, or a quiet stretch reads as a hang.
+
 As it runs, each review lens announces itself as it lands — clean, or its finding
 and blocker counts — with how many of the six are done. **There is no estimated
 time to completion and there will not be one from inside the run:** the workflow

@@ -29,6 +29,7 @@ GUARD = os.path.join(HERE, 'guard.py')
 HOOK = os.path.join(HERE, 'plan-lock-hook.py')
 STATE = os.path.join(HERE, 'state.py')
 HISTORY = os.path.join(HERE, 'history.py')
+WATCH = os.path.join(HERE, 'watch.py')
 
 PLUGIN = os.path.dirname(HERE)
 MANIFEST = os.path.join(PLUGIN, '.claude-plugin', 'plugin.json')
@@ -78,6 +79,10 @@ VERBOSE = '-v' in sys.argv
 
 
 def check(name, ok, detail=''):
+    # Coerced, because a check that crashes instead of failing is worse than one
+    # that never ran: it takes the whole suite down at exactly the moment a real
+    # regression made it fail, and reports a TypeError rather than the defect.
+    detail = str(detail) if detail else ''
     results.append((name, ok, detail))
     if VERBOSE or not ok:
         print('  %s  %s%s' % ('PASS' if ok else 'FAIL', name, (' — ' + detail) if detail and not ok else ''))
@@ -361,6 +366,79 @@ def test_lifetime():
         check('a same-version edit is reported as an edit, not as being behind',
               'same rule set' in detail and 'is rule set' not in detail,
               detail[:180] or out[:180])
+    finally:
+        shutil.rmtree(repo, ignore_errors=True)
+
+
+# --------------------------------------------------------------------- watching
+
+def test_watch():
+    """Progress comes from the repo's own files, and only when it moves.
+
+    The point of the watcher is that silence means nothing happened. A watcher
+    that repeats itself trains people to ignore it, and one that reports a change
+    that did not occur is worse than none — so the cases check both directions.
+    """
+    repo = make_repo()
+    work = os.path.join(repo, 'docs/work/demo')
+    try:
+        def look():
+            code, out, err = run(['python3', WATCH, 'docs/work/demo', '--once'], cwd=repo)
+            return code, out.strip().split('\n') if out.strip() else []
+
+        code, first = look()
+        check('watch runs against a live work item', code == 0)
+        check('watch reports the stage it finds',
+              any(l.startswith('stage: planned') for l in first), first)
+
+        code, again = look()
+        check('watch repeats nothing when nothing moved',
+              again == first, 'first=%s again=%s' % (first, again))
+
+        # the builder ticking a step is the one live signal during a long build
+        plan = read(repo, 'docs/work/demo/plan.md')
+        write(repo, 'docs/work/demo/plan.md', plan.replace('- [ ] AC1', '- [x] AC1', 1))
+        code, out, _ = run(['python3', WATCH, 'docs/work/demo', '--once'], cwd=repo)
+        check('watch sees a step get ticked', 'steps ticked' in out, out.strip())
+
+        os.makedirs(os.path.join(work, 'reviews'), exist_ok=True)
+        write(repo, 'docs/work/demo/reviews/002-security.md', '# Review\n')
+        run(['python3', STATE, 'docs/work/demo',
+             json.dumps({'stage': 'reviewed', 'log': 'panel complete'})], cwd=repo)
+        write(repo, 'docs/work/demo/verdict.md', '# Verdict\n')
+        code, out, _ = run(['python3', WATCH, 'docs/work/demo', '--once'], cwd=repo)
+        for wanted in ('stage: reviewed', '002-security.md', 'verdict.md written',
+                       'panel complete'):
+            check('watch reports %r' % wanted, wanted in out, out.strip())
+
+        code, out, _ = run(['python3', WATCH, 'docs/work/nope', '--once'], cwd=repo)
+        check('watch refuses a work item that does not exist', code == 2, out.strip())
+
+        # --once cannot test change detection: every invocation starts from a
+        # fresh baseline, so it emits the same lines whether or not the diff
+        # works. Exercise the comparison itself.
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('quorum_watch', WATCH)
+        watch = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(watch)
+
+        was = watch.snapshot(work)
+        check('an unchanged item produces no lines at all',
+              watch.differences(was, was) == [], watch.differences(was, was))
+
+        moved = dict(was)
+        moved['ticked'] = was['ticked'] + 1
+        moved['steps'] = max(was['steps'], moved['ticked'])
+        check('one more ticked step produces exactly one line',
+              len(watch.differences(was, moved)) == 1
+              and 'steps ticked' in watch.differences(was, moved)[0],
+              watch.differences(was, moved))
+
+        staged = dict(was)
+        staged['stage'] = 'adjudicated'
+        check('a stage change produces exactly one line',
+              watch.differences(was, staged) == ['stage: adjudicated'],
+              watch.differences(was, staged))
     finally:
         shutil.rmtree(repo, ignore_errors=True)
 
@@ -810,6 +888,7 @@ def main():
     test_frontmatter()
     test_history()
     test_install_ci()
+    test_watch()
 
     failed = [r for r in results if not r[1]]
     print('')

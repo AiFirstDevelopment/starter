@@ -217,6 +217,26 @@ and a failed run resumes instead of being re-paid for:
 
 Up to thirteen agents per run.
 
+### Watching it
+
+The workflow runs detached, so the session goes quiet after launch. Two views:
+`/workflows` shows the live progress tree, where each lens announces itself as it
+lands with its finding and blocker counts. And [`bin/watch.py`](plugins/quorum/bin/watch.py)
+can be armed as a monitor to report into the conversation instead — one line per
+observable change, read from your repository's own files rather than from Claude
+Code's internals, which would silently stop working after an update.
+
+Silence there means nothing moved, and during Review that is expected rather than
+broken: six lenses read in parallel and write nothing until the panel is
+transcribed.
+
+**There is no estimated time to completion and there will not be one**, which is a
+design constraint rather than an omission. The workflow script cannot read a clock
+— `Date.now()` throws there deliberately, so a resumed run replays identically —
+so any figure it printed would be invented. `/quorum:history` reports how long
+previous items on this repo actually took, which is an expectation grounded in
+something that happened.
+
 ### The pull request is the deliverable
 
 The publisher reads the verdict and writes a PR body for someone who was not
@@ -826,6 +846,7 @@ starter/
 │   │   ├── bin/                  # the enforcement layer — no model involved
 │   │   │   ├── guard.py          # the mechanical rules; vendored into CI
 │   │   │   ├── history.py        # every work item ever planned, from git
+│   │   │   ├── watch.py          # emits a line when a running item moves
 │   │   │   ├── plan-lock-hook.py # PreToolUse refusal of requirement edits
 │   │   │   ├── state.py          # the state.json recorder
 │   │   │   └── selftest.py       # breaks every rule on purpose, asserts it fires
