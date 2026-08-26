@@ -58,6 +58,15 @@ That vendors `guard.py` to `.quorum/guard.py` and writes
 `.github/workflows/quorum-guard.yml`. It vendors rather than referencing the
 plugin because CI runners have no plugin installed.
 
+**This half is GitHub-only, and it does not announce that.** The workflow it
+writes is GitHub Actions and `--check-gate` queries the GitHub API. On a GitLab
+remote `--install-ci` will still write that file and it will simply never run —
+so say so rather than reporting the gate installed. The vendored `.quorum/guard.py`
+itself is host-agnostic; what is missing is a `.gitlab-ci.yml` job invoking it
+with `--base "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"`, which has to be
+written by hand. The rest of the pipeline is unaffected: the publisher speaks
+`glab` and opens merge requests.
+
 **Re-run it whenever the plugin updates.** The vendored copy is frozen at the
 rules it was written with, so a repo that adopted a year ago is still enforcing
 that year-old set — and reporting green while it does. The guard raises a

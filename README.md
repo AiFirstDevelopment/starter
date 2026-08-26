@@ -661,10 +661,25 @@ weighed against isn't its own.
 
 ---
 
-## A prompt for a new repo
+## Adopting it into a repo
 
 Paste this into Claude Code in a repo that should adopt this workflow. It explains
 the system and wires it up.
+
+**An existing repo with code in it is the normal case**, not a special one.
+`1-plan` reads the code a change touches before planning against it, the
+simplicity lens looks for what it can reuse, and the builder is told to write code
+indistinguishable in style from the code beside it. The guard is no harsher on an
+old codebase either: it counts test cases and skip markers as a **delta against
+the base branch**, so a suite that already carries legacy `skip`s trips nothing —
+only skips your change introduces do.
+
+**One gap worth knowing before you start.** The CI half is GitHub-only:
+`--install-ci` writes a GitHub Actions workflow and `--check-gate` asks the GitHub
+API. On GitLab you still get the pipeline and the publisher — which does speak
+`glab` and opens merge requests — but you would write the equivalent
+`.gitlab-ci.yml` job calling `.quorum/guard.py` yourself. Everything except that
+one workflow file is host-agnostic.
 
 ```text
 This repo should adopt the "starter" Claude Code plugins. Here is what they are
