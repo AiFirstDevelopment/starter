@@ -1,6 +1,7 @@
 ---
 name: 3-review
 description: Step 3 of the quorum pipeline. Reviews the built change from several independent lenses in fresh context, writing one review file per lens to docs/work/<slug>/reviews/. Finds problems; fixes nothing.
+argument-hint: [slug]
 disable-model-invocation: true
 ---
 

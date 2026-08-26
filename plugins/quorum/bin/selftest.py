@@ -328,6 +328,56 @@ def test_version():
           'exit %s, printed %r, constant is %r' % (code, out.strip(), stamped))
 
 
+def test_frontmatter():
+    """Every SKILL.md frontmatter key is one Claude Code actually reads.
+
+    An unrecognised key does not error — it is ignored. `argument_hint` instead
+    of `argument-hint` produces a skill that loads fine and simply never shows
+    its hint, which is indistinguishable from not having set one. That is the
+    same silent-failure shape as the rest of this file, so it gets the same
+    treatment.
+
+    If Claude Code adds a frontmatter field, add it here; an allowlist that
+    rejects a newly valid key is the expected cost of catching a typo.
+    """
+    supported = set([
+        'name', 'description', 'when_to_use', 'argument-hint', 'arguments',
+        'disable-model-invocation', 'user-invocable', 'allowed-tools',
+        'disallowed-tools', 'model', 'effort', 'context', 'agent', 'background',
+        'hooks', 'paths', 'shell', 'metadata', 'license', 'compatibility',
+    ])
+
+    root = os.path.dirname(PLUGIN)
+    skills = []
+    for plugin in sorted(os.listdir(root)):
+        skill_root = os.path.join(root, plugin, 'skills')
+        if not os.path.isdir(skill_root):
+            continue
+        for entry in sorted(os.listdir(skill_root)):
+            path = os.path.join(skill_root, entry, 'SKILL.md')
+            if os.path.exists(path):
+                skills.append((plugin, entry, path))
+
+    check('found skills to check', bool(skills))
+    for plugin, entry, path in skills:
+        with open(path) as handle:
+            lines = handle.read().split('\n')
+        check('%s:%s opens with frontmatter' % (plugin, entry),
+              bool(lines) and lines[0].strip() == '---')
+        keys = []
+        for line in lines[1:]:
+            if line.strip() == '---':
+                break
+            match = re.match(r'^([a-z][a-z0-9_-]*):', line)
+            if match:
+                keys.append(match.group(1))
+        check('%s:%s declares name and description' % (plugin, entry),
+              'name' in keys and 'description' in keys, 'has %s' % keys)
+        unknown = [k for k in keys if k not in supported]
+        check('%s:%s uses only supported frontmatter keys' % (plugin, entry),
+              not unknown, 'unrecognised (silently ignored): %s' % unknown)
+
+
 def test_default_branch():
     repo = make_repo()
     try:
@@ -510,6 +560,7 @@ def main():
     test_agents()
     test_lifetime()
     test_version()
+    test_frontmatter()
 
     failed = [r for r in results if not r[1]]
     print('')

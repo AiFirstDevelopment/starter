@@ -1,6 +1,7 @@
 ---
 name: 4-quorum
 description: Step 4 of the quorum pipeline. Acts as judge over the plan, the code, and all reviews - adjudicating each finding, applying accepted fixes, and writing a verdict to docs/work/<slug>/verdict.md. Ends only with a green test suite.
+argument-hint: [slug]
 disable-model-invocation: true
 ---
 

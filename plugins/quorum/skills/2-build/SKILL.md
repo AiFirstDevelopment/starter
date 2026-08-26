@@ -1,6 +1,7 @@
 ---
 name: 2-build
 description: Step 2 of the quorum pipeline. Implements the plan at docs/work/<slug>/plan.md, ticking off steps as it goes and recording any deviation from the plan.
+argument-hint: [slug]
 disable-model-invocation: true
 ---
 

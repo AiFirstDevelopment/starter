@@ -1,6 +1,7 @@
 ---
 name: pipeline
 description: Runs the whole quorum pipeline autonomously from an approved plan - build, six independent review lenses in parallel, adjudication, then a read-only recheck of the judge's own commits - stopping only for plan approval at the start. Use when the plan is written and you want the change delivered without further supervision.
+argument-hint: [slug]
 disable-model-invocation: true
 ---
 

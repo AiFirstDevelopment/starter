@@ -1,6 +1,7 @@
 ---
 name: status
 description: Reports where the current work item stands in the quorum pipeline - what has run, what it concluded, and what has changed since - and names the next command to run. Read-only; changes nothing.
+argument-hint: [slug]
 ---
 
 # Status — where am I?
