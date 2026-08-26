@@ -1,7 +1,7 @@
 # starter
 
-A Claude Code plugin marketplace — the starter kit you pull into a new repo to
-get a working delivery discipline on day one.
+A Claude Code plugin marketplace — the starter kit you pull into a repo to get a
+working delivery discipline on day one, and keep for the changes after that.
 
 Two plugins, adoptable together or separately:
 
@@ -620,9 +620,11 @@ starter is a plugin marketplace at https://github.com/AiFirstDevelopment/starter
 with two plugins.
 
 quorum — a delivery pipeline:
-  /quorum:1-plan   Investigate a change request and write docs/work/<slug>/plan.md
-                   capturing Intent, falsifiable Acceptance criteria, Non-goals,
-                   and Open questions. Writes no code.
+  /quorum:1-plan   Settle the work branch with me — offering a name, and starting a
+                   fresh one off the base when the current branch already carries a
+                   finished change — then investigate the request and write
+                   docs/work/<slug>/plan.md capturing Intent, falsifiable Acceptance
+                   criteria, Non-goals, and Open questions. Writes no code.
   /quorum:2-build  Implement that plan, ticking off steps and recording deviations.
                    Never edits Intent, Acceptance criteria, or Non-goals.
   /quorum:3-review Review the diff in fresh context from six independent lenses
@@ -632,9 +634,12 @@ quorum — a delivery pipeline:
   /quorum:4-quorum Judge the plan, the diff, and all reviews. Accept, reject, or
                    escalate each finding; apply accepted fixes; end with a green
                    suite; write docs/work/<slug>/verdict.md.
-  /quorum:guard    Run the mechanical rule checks (requirements unchanged, no test
-                   weakened, reviews append-only, verdict self-consistent, evidence
-                   real) and optionally install them as a CI gate.
+  /quorum:guard    Run the mechanical rule checks — requirements unchanged since
+                   planning, no test weakened or deleted, reviews append-only,
+                   verdict self-consistent, every criterion accounted for, cited
+                   evidence real, work on the branch the plan named, and the
+                   vendored CI checker present and matching — and install them as
+                   a CI gate.
   /quorum:pipeline After I approve a plan, run all of that unattended and open a
                    pull request at the end. Plan approval is the only human gate.
   /quorum:status   Report which of those states this branch is in and the single
@@ -690,8 +695,21 @@ WHAT I WANT YOU TO DO NOW
    a running session only loads plugins at startup, so /quorum:* will not resolve
    until I restart. After restarting I should see the quorum and tests skills.
 
-5. Then stop. Do not start any work. I will begin with /quorum:1-plan, approve the
-   plan, and then run /quorum:pipeline.
+5. After I have restarted, remind me to install the CI half, which is the only
+   enforcement no agent can reach:
+
+   /quorum:guard  — then vendor it with guard.py --install-ci, commit the two
+   files it writes, and make "quorum guard" a required status check in branch
+   protection. That last step is a repo-admin action in the hosting UI and
+   nothing here can do it; until it is ticked the workflow reports and nothing
+   blocks a merge. guard.py --check-gate says which of those is true.
+
+   Also tell me: re-run --install-ci whenever the plugin updates. The vendored
+   copy is frozen at the rules it was written with, and a repo that adopted a
+   year ago is otherwise still enforcing year-old rules while reporting green.
+
+6. Then stop. Do not start any work. I will begin with /quorum:1-plan, approve the
+   plan, and then run /quorum:pipeline — and again for each change after that.
 ```
 
 ---
@@ -711,6 +729,12 @@ starter/
 │   │   │   ├── quorum-scribe.md
 │   │   │   ├── quorum-judge.md
 │   │   │   └── quorum-publisher.md
+│   │   ├── bin/                  # the enforcement layer — no model involved
+│   │   │   ├── guard.py          # the mechanical rules; vendored into CI
+│   │   │   ├── plan-lock-hook.py # PreToolUse refusal of requirement edits
+│   │   │   ├── state.py          # the state.json recorder
+│   │   │   └── selftest.py       # breaks every rule on purpose, asserts it fires
+│   │   ├── hooks/hooks.json      # wires the plan-lock hook in
 │   │   ├── workflow/pipeline.js  # deterministic orchestration
 │   │   ├── reference/contract.md # the artifact contract
 │   │   └── skills/
@@ -719,6 +743,7 @@ starter/
 │   │       ├── 2-build/SKILL.md
 │   │       ├── 3-review/SKILL.md
 │   │       ├── 4-quorum/SKILL.md
+│   │       ├── guard/SKILL.md
 │   │       └── status/SKILL.md
 │   └── tests/
 │       ├── .claude-plugin/plugin.json

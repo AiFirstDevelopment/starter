@@ -3,7 +3,7 @@
 An honest look at where this pipeline sits against the tools it overlaps with,
 and where it is still weaker than its own prose suggests.
 
-Last updated after the decorrelation and self-test work (v0.4.0).
+Last updated after the repo-lifetime work (v0.8.0).
 
 ## The landscape
 
@@ -33,6 +33,7 @@ the critic is measured against is left to you.
 | Reviews the fixer's own edits | n/a | no | yes, bounded, read-only |
 | Record left behind | inline comments | commit log | append-only reviews + verdict + state |
 | Rules enforced by | prompt | prompt | **prompt, hook, and CI** |
+| Survives a repo's lifetime | yes, by construction | n/a, per task | yes, but it had to be built |
 
 ## What it does better
 
@@ -61,6 +62,17 @@ diff.
 criterion met, never expand scope" is, because each names a real escape hatch. As
 of v0.3.0, the mechanizable ones are checked by machine rather than requested in
 prose.
+
+**The enforcement checks itself.** The CI half runs a *copy* of the checker,
+because a CI runner has no plugin installed — and a copy is the kind of thing
+that rots quietly. So the guard has rules about its own installation: a vendored
+copy that no longer matches the plugin it came from is a violation, and so is one
+that has been deleted, or left without the workflow that runs it. This closes a
+gap most tools do not have because most tools do not have this shape: a PR bot is
+a hosted service that cannot go stale on your machine, while a vendored script
+silently can. It is worth being precise about what this buys — it makes removing
+the enforcement a visible act rather than a quiet one. It does not stop anyone
+with commit access from removing it deliberately and saying so.
 
 **An audit trail rather than a chat log.** Reviews are append-only, including
 reviews that later turned out to be wrong. The verdict records dispositions with
@@ -93,11 +105,32 @@ confident, wrong "AC3: met, see `foo.test.js:31`" — with a real file and a rea
 line — still passes. That is a judgment, and judgment is what this system spends
 six lenses and a judge on precisely because it cannot be checked.
 
-**The last gate is still a human action, but no longer an invisible one.** CI
-enforcement becomes a gate only when `quorum guard` is a required status check.
-`guard.py --check-gate` now reports whether it actually is — `LIVE`, `NOT LIVE`,
-or `cannot tell` — so an unticked box stops looking identical to a working gate.
-Nobody here can tick it; a repo admin must.
+**The last gate is still a human action, but no longer an invisible or
+unasked one.** CI enforcement becomes a gate only when `quorum guard` is a
+required status check. `guard.py --check-gate` reports whether it actually is —
+`LIVE`, `NOT LIVE`, or `cannot tell` — and the pipeline now runs it on every
+publish, puts the answer in the pull request body, and records it in
+`state.json`. The three answers stay distinct: `cannot tell` is never rounded up
+to a pass. That turns "is the gate live" from a question somebody had to think to
+ask into one that gets answered every run. Nobody here can tick the box; a repo
+admin must, and a run does not fail because they have not.
+
+**The orchestrator is barely tested.** `selftest.py` covers the enforcement layer
+thoroughly and covers exactly one thing about `pipeline.js`: that it calls agents
+by names that actually resolve. It knows nothing about whether the prompts say
+what they should, whether the schemas match what the agents return, or whether
+the phases run in the right order — all of which need live agents to exercise and
+none of which a static check reaches. The script that invokes every agent in the
+system has the thinnest coverage in it. That is not hypothetical: a wrong agent
+name shipped in that file twice, and both times it was found by a run failing
+rather than by a test.
+
+**The installation rules only see one diff.** `enforcement` catches the CI checker
+being deleted in the change under review. It cannot see a deletion that landed on
+the base branch before this work item started, and a repo where both the checker
+and its workflow went months ago is indistinguishable from one that never adopted
+them. Closing that needs a memory of what was once installed — which would be one
+more file that could itself be quietly deleted.
 
 **Cost.** Up to thirteen agents per run against one pass from a PR bot. This is
 appropriate for a branch you are about to merge and absurd for a typo.
