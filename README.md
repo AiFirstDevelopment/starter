@@ -242,10 +242,10 @@ spent, quoted with the observed spread. Below two runs it says so and gives no
 number, because one data point is not a distribution. Past the longest previous
 run it withdraws the estimate rather than pretending.
 
-The workflow script still cannot produce one and never will: `Date.now()` throws
-there by design, so a resumed run replays identically. The watcher is an ordinary
-process with a clock, and it does arithmetic over durations this repository has
-recorded rather than forecasting from a model of how long work ought to take.
+The number is arithmetic over durations this repository has recorded, not a
+forecast from a model of how long work ought to take. Before there are two
+finished runs there is nothing to compute it from, and it says so rather than
+guessing.
 
 ### The pull request is the deliverable
 

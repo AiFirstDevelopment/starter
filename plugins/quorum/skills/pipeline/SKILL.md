@@ -202,31 +202,20 @@ moving, `verdict.md` written — read from the repository's own files. It stops
 itself when the item reaches `published`.
 
 Each report carries elapsed time and, once this repo has finished **two or more**
-runs, roughly how much is left — median of what previous runs actually took, minus
-what this one has spent, quoted with the observed spread. Below two it says so and
-gives no number: one data point is not a distribution. Past the median it says
-"somewhere in the tail" rather than counting backwards, and past the longest run
-it withdraws the estimate entirely.
+runs, an estimate of the minutes left: the median of what previous runs took,
+minus what this one has spent, with the observed spread beside it. Below two runs
+it says so and gives no number, because one data point is not a distribution. Past
+the median it says "somewhere in the tail" rather than counting backwards, and
+past the longest previous run it withdraws the estimate.
 
-This is not a contradiction of "no ETA from inside the run". `watch.py` is an
-ordinary process with a clock; the workflow script is the thing that cannot read
-one. The estimate is arithmetic over durations this repository has recorded, never
-a forecast from a model of how long work ought to take.
+`/workflows` is the other view: the live progress tree, where each review lens
+announces itself as it lands with its finding and blocker counts, and how many of
+the six are done.
 
 **Silence means nothing moved**, and during Review that is expected rather than
 broken: six lenses read in parallel and write nothing until the panel is
 transcribed, so the watcher reports the panel starting and finishing and nothing
 in between. Say that when you arm it, or a quiet stretch reads as a hang.
-
-As it runs, each review lens announces itself as it lands — clean, or its finding
-and blocker counts — with how many of the six are done. **There is no estimated
-time to completion and there will not be one from inside the run:** the workflow
-script cannot read a clock, by design, so any figure it printed would be invented.
-What it reports instead is work remaining, which it actually knows.
-
-For a real number, `/quorum:history` shows how long previous items on this repo
-took, measured from their own recorded timestamps. Quote those if the user wants
-an expectation — a duration that happened beats a prediction that did not.
 
 The workflow runs in the background and reports when it completes. It returns a
 summary object; `verdict.md` on disk is the authoritative record.

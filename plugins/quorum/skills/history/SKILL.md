@@ -62,14 +62,15 @@ Worth being precise, because two of them are easy to misread:
   Treat a recorded URL as fact and an inferred number as a lead.
 
 - **took** is wall-clock between the first and last event `state.json` recorded,
-  and only appears once a run has recorded at least two. It is a duration that
-  happened, **never an estimate of the next one**. It includes any time the item
-  sat waiting for a human, because that is also time the change took.
+  and only appears once a run has recorded at least two. It includes any time the
+  item sat waiting for a human, because that is also time the change took.
 
-  It comes from the log's own stamps because there is nowhere else honest to get
-  it: the workflow script cannot read a clock at all — `Date.now()` throws there
-  by design, so a resumed run replays identically — and file mtimes are rewritten
-  by a checkout.
+  It comes from the log's own stamps rather than file mtimes, which a checkout
+  rewrites — the same reason `state.json` exists at all.
+
+  These are also what `bin/watch.py` estimates from during a live run: median of
+  the finished ones minus what the current one has spent. So they are durations
+  that happened *and* the only basis for saying how long the next one has left.
 
 - **STAGE** prefers `state.json`'s stage and falls back to the plan's *Status*.
   Work items planned before the state recorder existed have only the latter, so
