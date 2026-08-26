@@ -113,7 +113,7 @@ Read down the table and report the **first** row that matches. Every row from
 
 | State | Looks like | Next |
 |---|---|---|
-| Wrong branch | Branch is `main`/`master`, or the repo has no commits | `git checkout -b feature/<name>`, then `/quorum:1-plan` |
+| On the base branch | Branch is `main`/`master`, or the repo has no commits | `/quorum:1-plan <what you want built>` — it names the branch with you and creates it |
 | Not started | No `docs/work/<slug>/` | `/quorum:1-plan <what you want built>` |
 | Planned | `stage` `planned` | Settle open questions, then `/quorum:pipeline` (it holds the approval gate) or `/quorum:2-build` to drive by hand |
 | Approved | `stage` `approved` | `/quorum:pipeline`, or `/quorum:2-build` |
@@ -124,8 +124,8 @@ Read down the table and report the **first** row that matches. Every row from
 | Adjudicated, blocked | Outcome `blocked`, or a red suite | Fix what the verdict names, then `/quorum:3-review` and `/quorum:4-quorum` |
 | Adjudicated, escalations | Verdict has open *Escalations* | Decide those yourself — they were escalated because they are not the judge's to make |
 | **Adjudicated, then changed** | Verdict exists **and** commits landed after `verdict.head` | Say the pipeline completed and what it concluded, then size the delta — see below |
-| Published | `pr.url` recorded, nothing changed since | Nothing here — the PR is the deliverable |
-| Done | Outcome `ready`, suite green, no escalations, nothing since | Open the PR (`/quorum:pipeline` does this), or merge |
+| Published | `pr.url` recorded, nothing changed since | Nothing here — the PR is the deliverable. When you want the next change, `/quorum:1-plan` branches off the base rather than stacking on this one |
+| Done | Outcome `ready`, suite green, no escalations, nothing since | Open the PR (`/quorum:pipeline` does this), or merge. Then `/quorum:1-plan <the next change>` |
 
 ### Adjudicated, then changed
 

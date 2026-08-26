@@ -27,11 +27,19 @@ In order of precedence:
    slug derived from the default branch — that is a sign work is happening on the
    wrong branch.
 
-   `/quorum:1-plan` is the one exception: rather than stopping, it names and
-   creates the work branch, then resolves the slug from it. Every other step
-   stops. See that skill for the naming rules.
+   `/quorum:1-plan` is the one exception: rather than stopping, it settles the
+   work branch with the user — naming it, or starting a fresh one off the base
+   when the branch already carries a finished work item — and resolves the slug
+   from that. Every other step stops. See that skill for the naming rules.
 
-Once a step has resolved a slug, later steps in the same session reuse it.
+Once a step has resolved a slug, later steps in the same session reuse it. The one
+exception is `/quorum:1-plan` starting a **new** work item: a repository
+accumulates changes, and the second one does not belong under the first one's
+slug. When it moves, it says so.
+
+`docs/work/` therefore holds one directory per change, and earlier ones stay put.
+They are the record of what was decided and reviewed, which is the same reason
+`/quorum:guard` treats reviews as append-only.
 
 ## Pipeline state — `state.json`
 

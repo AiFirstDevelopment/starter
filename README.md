@@ -282,11 +282,44 @@ failure mode it exists to prevent is a green suite bought by deleting a test.
 For how this compares to PR review bots and autonomous coding agents — and where
 it is still weaker than it sounds — see [docs/comparison.md](docs/comparison.md).
 
+## Making successive changes
+
+This is not a greenfield tool. Most of what it runs on is a service that already
+exists, and the unit of work is one change to it: plan, approve, run, read the
+pull request, start the next one.
+
+`/quorum:1-plan` is where a change begins, and it settles two things with you
+before writing anything.
+
+**The branch name.** It derives one from the substance of your request and offers
+it as a default you accept or replace. The name is not decoration: it becomes the
+slug, the slug becomes `docs/work/<slug>/`, and both appear in every later report
+and in the pull request. Changing it afterwards means moving the artifact
+directory and rewriting `state.json`, so it asks once, up front, rather than
+leaving you to `git branch -m` later. It asks about the *name* only — whether to
+branch is not a question, since branching is what the step is for.
+
+**Which work item this is.** If you are standing on a branch that already carries
+a plan, your request is either more of that item or the start of the next one, and
+those want opposite things. More of the same revises the existing plan in place.
+The next change branches from the base rather than from where you are standing —
+otherwise change two stacks onto change one, burying an unreviewed change under a
+new plan and leaving the slug naming work it no longer describes. When the request
+does not settle which it is, you are asked rather than guessed at.
+
+`docs/work/` accumulates one directory per change and earlier ones stay. They are
+the record of what was decided and reviewed.
+
 ## The steps
 
 ### `/quorum:1-plan`
 
 Investigates the request and writes `docs/work/<slug>/plan.md`. **Writes no code.**
+
+Before that it settles the work branch with you — offering a derived name as a
+default, and starting a fresh branch off the base when the one you are standing on
+already carries a finished change. See
+[Making successive changes](#making-successive-changes).
 
 Captures **Intent**, **Acceptance criteria**, **Non-goals**, **Open questions**,
 **Approach**, **Steps**, and a **Test strategy**. Acceptance criteria are the
