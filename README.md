@@ -267,14 +267,21 @@ in one place means the other does not ask again: one decision, asked once. Being
 asked twice for the same decision is not twice the safety, it is training to click
 through the only checkpoint in the system.
 
-What no command will do is approve a plan it wrote in the same breath. A plan you
-are shown the instant it was generated is a rubber stamp, not a decision, so
-`1-plan` writing a fresh plan tells you to read it and come back. The rule is
-against approving your own new work, not against carrying a decision you actually
-made.
+`1-plan` asks at the end of writing a plan too, so the common path is one command:
+describe the change, read the criteria, approve, and the pipeline starts. There is
+no cooling-off rule. One was tried and removed as theatre — refusing to ask in the
+same breath bought a round trip and no reflection, since bare `/quorum:1-plan`
+approves in a keystroke anyway.
 
-Unanswered questions matter more here than anywhere else: after this point there
-is nobody to ask, and the builder must guess and record the guess.
+Two things carry the weight instead, and both are about **what the decision is
+taken from** rather than when. The acceptance criteria are shown in full rather
+than summarised, because a decision made from a paraphrase is a decision about the
+paraphrase — and the plan itself is written to disk before you are asked, so the
+whole document is open in your editor while the prompt waits, not just the part
+quoted at you. And **an unanswered Open question stops the offer outright** — you are
+asked the question instead of asked to approve. Those questions exist because
+their answers change the shape of the work, and after approval there is nobody to
+ask: the builder guesses and records the guess.
 
 An authorization covers one run, and only a run that actually starts spends it.
 Before the gate, the skill checks that the pipeline's five agents resolve, so a

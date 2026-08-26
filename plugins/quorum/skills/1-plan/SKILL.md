@@ -188,18 +188,33 @@ question.
    nobody moved the target — including you. Record it **after** the plan's
    requirements are final, and never re-record it to make a later check pass.
 
-7. **Stop.** Report the path and summarize the acceptance criteria and any open
-   questions. Do not begin building.
+7. **Offer the decision.** Do not begin building. Report the plan's path, then
+   show the **acceptance criteria in full** — not a paraphrase. They are what the
+   whole pipeline is measured against and they are short; a decision taken from a
+   summary is a decision about the summary.
 
-   Do not ask them to approve it now. You wrote it moments ago; a decision taken
-   in that breath is a rubber stamp. Tell them to read it and come back — bare
-   `/quorum:1-plan` will hold the gate, or `/quorum:pipeline` will.
+   **Say the path, and say the file is already written.** The plan is on disk
+   before this question is asked, so the user can open and read the whole document
+   in their editor while the prompt waits — the criteria shown here are a
+   convenience, not the only thing available to decide from. Tell them that rather
+   than leaving them to work it out.
 
-   The user then either drives the steps by hand (`/quorum:2-build`,
-   `/quorum:3-review`, `/quorum:4-quorum`) or runs `/quorum:pipeline`, which
-   executes all of it unattended. **Assume the latter.** Plan approval is the last
-   human checkpoint, so anything you leave vague is something a builder will have
-   to guess at with nobody to ask.
+   **If any *Open question* is unanswered, do not offer approval at all.** Ask the
+   questions. They are in the plan because their answers change the shape of the
+   work, and after approval there is nobody to ask — the builder guesses and
+   records the guess. Offer once they are settled.
+
+   Otherwise ask whether to approve, making plain what it authorizes: an
+   unattended run that writes code, reviews it, applies fixes, pushes, and opens a
+   pull request with no further checkpoint. On a clear yes, set *Status* to
+   `approved`, record it exactly as in *Called with no description*, and offer to
+   start the pipeline. On anything less than a clear yes, stop and leave *Status*
+   at `planned`.
+
+   From here the user either runs `/quorum:pipeline` or drives the steps by hand
+   (`/quorum:2-build`, `/quorum:3-review`, `/quorum:4-quorum`). **Assume the
+   former.** Plan approval is the last human checkpoint, so anything you leave
+   vague is something a builder will have to guess at with nobody to ask.
 
 ## Two kinds of statement
 
@@ -342,16 +357,19 @@ A three-line change gets no diagram. Do not draw one to look thorough.
 
 ## Status lifecycle
 
-*Status* moves `planned` → `approved` → `built` → `adjudicated`. When you write a
-plan you write `planned`, and **never `approved` in that same run** — a plan that
-approves its own execution defeats the only checkpoint in the system, and a human
-shown a plan the moment it was generated is being asked to rubber-stamp rather
-than to decide.
+*Status* moves `planned` → `approved` → `built` → `adjudicated`. You write
+`planned` when the plan is written and `approved` only on an explicit human yes.
 
-`approved` is only ever written on an explicit human yes, to a plan that already
-existed before this invocation: the no-description mode above, `/quorum:pipeline`'s
-gate, or the user editing the plan themselves. The prohibition is on approving
-your own fresh work, not on carrying a decision the user actually made.
+**Never write `approved` without being told to**, and never read enthusiasm about
+a plan as approval of it. A plan that approves its own execution defeats the only
+checkpoint in the system. That is the whole prohibition; it is about consent, not
+about timing.
+
+There is deliberately no cooling-off rule. One was tried and removed: refusing to
+ask in the same run as writing the plan bought a round trip and no reflection,
+because bare `/quorum:1-plan` then approves in a keystroke anyway. What actually
+varies is what the decision is taken *from*, which is why the criteria are shown
+in full and why an unanswered *Open question* stops the offer outright.
 
 ## Rules
 
