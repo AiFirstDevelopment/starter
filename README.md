@@ -410,12 +410,15 @@ the ones that do not depend on cooperation:
 | `evidence` | a criterion marked met cites a file, or a line, that does not exist |
 | `branch` | work item artifacts on the default branch, or on a branch other than the one the plan was written on |
 | `vendored` | `.quorum/guard.py` no longer matches the checker it was vendored from |
+| `enforcement` | the vendored checker or its workflow was deleted, or one is present without the other |
 
 `only` earns its own row: a single `it.only(...)` disables every other test in the
 file while the run still reports green — the quietest way to buy a passing suite,
 and invisible in a summary line reading "42 passed".
 
-`vendored` earns its own row for the same reason, one repo-lifetime later. CI runs
+`enforcement` and `vendored` are the pair that keeps the CI half honest over a
+repo's lifetime, and they cover different failures. `vendored` earns its row for
+the same reason `only` does, one repo-lifetime later. CI runs
 a **copy** of `guard.py`, because a CI runner has no plugin installed — and a copy
 is frozen at the day it was made. Adopt at one version, update the plugin for a
 year, and CI keeps enforcing the rules it started with while reporting green
@@ -423,6 +426,16 @@ throughout. A stale checker is worse than no checker, because the green tick rea
 as enforcement. The comparison is on file contents rather than version numbers, so
 it also catches a vendored copy somebody edited in place, and stays quiet on
 releases that do not touch the checker at all.
+
+`enforcement` covers what `vendored` structurally cannot: a checker that is
+**gone**. With nothing on disk there is nothing to compare, so deleting
+`.quorum/guard.py` would otherwise buy back everything the guard was refusing,
+silently. It watches the diff for either file being removed — including both
+going together, which is what disabling the gate actually looks like — and
+separately refuses the half-installed states a diff window cannot reach: a
+workflow whose checker is missing errors on every run, and a vendored checker
+with no workflow runs nowhere. A repo that never vendored has neither file and
+hears nothing, which is the correct answer there.
 
 **Three layers, and only the last one is a real guarantee:**
 

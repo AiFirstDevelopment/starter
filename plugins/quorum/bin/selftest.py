@@ -269,21 +269,45 @@ def test_lifetime():
          lambda r: None, None)
 
     def vendor(repo):
-        """What --install-ci writes: this exact file, byte for byte."""
+        """What --install-ci writes: this exact file, plus the workflow that runs it."""
         write(repo, '.quorum/guard.py', open(GUARD).read())
+        write(repo, '.github/workflows/quorum-guard.yml', 'name: quorum guard\n')
 
     def vendor_then_edit(repo):
         vendor(repo)
         with open(os.path.join(repo, '.quorum/guard.py'), 'a') as handle:
             handle.write('\n# someone tuned the rules here and nowhere else\n')
 
+    def vendor_then_delete_guard(repo):
+        vendor(repo)
+        git(repo, 'add', '-A')
+        git(repo, 'commit', '-q', '-m', 'vendor enforcement')
+        git(repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+        os.remove(os.path.join(repo, '.quorum/guard.py'))
+
+    def vendor_then_delete_both(repo):
+        vendor_then_delete_guard(repo)
+        os.remove(os.path.join(repo, '.github/workflows/quorum-guard.yml'))
+
     case('a faithfully vendored guard is allowed', vendor, None)
+    case('a workflow with no vendored guard is caught',
+         lambda r: write(r, '.github/workflows/quorum-guard.yml', 'name: quorum guard\n'),
+         'enforcement')
+    case('a vendored guard nothing runs is caught',
+         lambda r: write(r, '.quorum/guard.py', open(GUARD).read()), 'enforcement')
+    case('deleting the vendored guard is caught', vendor_then_delete_guard, 'enforcement')
+    case('deleting the whole enforcement layer is caught',
+         vendor_then_delete_both, 'enforcement')
+    case('a repo that never vendored is left alone', lambda r: None, None)
     case('a vendored guard edited in place is caught', vendor_then_edit, 'vendored')
     case('a vendored guard frozen at an older rule set is caught',
-         lambda r: write(r, '.quorum/guard.py', "VERSION = '0'\n# old rules\n"),
+         lambda r: (write(r, '.quorum/guard.py', "VERSION = '0'\n# old rules\n"),
+                    write(r, '.github/workflows/quorum-guard.yml', 'x\n')),
          'vendored')
     case('an unstamped vendored guard is caught',
-         lambda r: write(r, '.quorum/guard.py', '# no stamp here\n'), 'vendored')
+         lambda r: (write(r, '.quorum/guard.py', '# no stamp here\n'),
+                    write(r, '.github/workflows/quorum-guard.yml', 'x\n')),
+         'vendored')
 
 
 # ------------------------------------------------------------ the version stamp

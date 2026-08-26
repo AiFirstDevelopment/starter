@@ -475,17 +475,27 @@ if (skipPublish) {
             'the pipeline does not let the judge grade its own repairs.'
           : 'Open it as a DRAFT: the verdict is not clean. Lead the body with what is failing ' +
             'or unresolved, and prefix the title with "[blocked]" if the outcome is blocked.') +
-      '\n\nBefore publishing, run the quorum guard (bin/guard.py in the quorum plugin, or ' +
-      '.quorum/guard.py if this repo vendors it). It checks the rules a machine can settle: ' +
+      '\n\nBefore publishing, run the quorum guard — the plugin\'s bin/guard.py, NOT a ' +
+      'vendored .quorum/guard.py. The vendored copy cannot check itself for drift, and ' +
+      'whether it has drifted is one of the rules. It settles what a machine can settle: ' +
       'requirements unchanged, no test deleted or skipped, reviews append-only, verdict not ' +
-      'self-contradictory, cited evidence real. If it exits non-zero, open the PR as a DRAFT ' +
-      'and lead the body with the violations verbatim — they are rules, not findings, and ' +
-      'nothing at this stage may adjudicate them away. If it cannot run, say so rather than ' +
-      'implying it passed.' +
+      'self-contradictory, cited evidence real, work on the branch the plan named, and the ' +
+      'vendored enforcement layer present and matching. If it exits non-zero, open the PR as ' +
+      'a DRAFT and lead the body with the violations verbatim — they are rules, not findings, ' +
+      'and nothing at this stage may adjudicate them away. If it cannot run, say so rather ' +
+      'than implying it passed.' +
+
+      '\n\nThen run it again with --check-gate and put the answer in the PR body as one ' +
+      'line. That reports whether "quorum guard" is actually a required status check — a ' +
+      'branch-protection setting no agent can change, and one an unticked box makes look ' +
+      'identical to a working gate. Report LIVE, NOT LIVE, or that it could not tell, and ' +
+      'never round "could not tell" up to a pass. Do not draft the PR over this: branch ' +
+      'protection is the repository owner\'s decision, not a defect in this change.' +
       '\n\nWhen the PR is open, record the state per the contract: stage "published", a pr ' +
       'object with the URL and draft flag, a recheck object with the judge-diff findings ' +
-      'and blockers from the summary above, and a guard object with clean and the violation ' +
-      'count. If you could not publish, record no pr and say ' +
+      'and blockers from the summary above, and a guard object with clean, the violation ' +
+      'count, and gate set to "live", "not-live", or "unknown". If you could not publish, ' +
+      'record no pr and say ' +
       'why in the log line.' +
       '\n\nNever merge, approve, or enable auto-merge. Never force-push. If the host is ' +
       'unsupported or its CLI is unavailable, do not fail — print the title, body, and command ' +

@@ -66,6 +66,7 @@ counts, outcomes, and commit SHAs. Never prose, never a copy of the artifacts.
   "verdict": { "outcome": "ready with follow-ups", "suite": "green", "accepted": 3,
                "rejected": 4, "unmet": 0, "escalations": 2, "head": "e4f5g6h" },
   "recheck": { "findings": 1, "blockers": 0 },
+  "guard":   { "clean": true, "violations": 0, "gate": "live" },
   "pr":      { "url": "https://github.com/o/r/pull/12", "draft": false },
   "log": [
     "2026-08-25T20:40:02Z 2-build built 6/6, 2 deviations, suite green",
@@ -87,8 +88,14 @@ nobody moved the target. `/quorum:1-plan` records it once. **No later step may
 re-record it** — a step that rewrites the baseline to match what it changed has
 defeated the check entirely.
 
-`guard` is the result of the mechanical rule check at publish time: `clean` and a
-violation count.
+`guard` is the result of the mechanical rule check at publish time: `clean`, a
+violation count, and `gate`.
+
+`gate` is `live`, `not-live`, or `unknown`, and the three are not
+interchangeable. Writing the CI workflow is not the gate — branch protection
+requiring it is, and that is a repo-admin setting nothing in this pipeline can
+reach. An unticked box looks exactly like a working gate from in here, so
+`unknown` is recorded as its own answer rather than rounded up to `live`.
 
 ### `head` is the load-bearing field
 

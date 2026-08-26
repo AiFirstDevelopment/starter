@@ -12,6 +12,7 @@ of. These are the ones a machine can settle, so a machine settles them:
   evidence       files and lines cited as proof of a met criterion actually exist
   branch         work is on a work branch, and on the one the plan was written on
   vendored       a .quorum/guard.py copy has not drifted from this checker
+  enforcement    the vendored checker and its workflow are still there, and paired
 
 Usage:
   guard.py [--work-dir docs/work/<slug>] [--base <ref>] [--json] [--check-gate]
@@ -35,7 +36,13 @@ import sys
 # adopting repo to re-vendor. Bump it when the rules change — drift is detected
 # by comparing file contents, so this number is for the error message and for
 # `--version` on a vendored copy, not for the check itself.
-VERSION = '1'
+VERSION = '2'
+
+# What --install-ci writes. Git reports paths with forward slashes, and these are
+# compared against that as well as against the filesystem, so they are literals
+# rather than os.path.join.
+VENDORED_GUARD = '.quorum/guard.py'
+VENDORED_FLOW = '.github/workflows/quorum-guard.yml'
 
 REQUIREMENT_SECTIONS = ['Intent', 'Acceptance criteria', 'Non-goals']
 
@@ -358,7 +365,7 @@ class Guard(object):
         both versions at once. When this file *is* the vendored copy, there is
         nothing to compare against.
         """
-        vendored = os.path.join('.quorum', 'guard.py')
+        vendored = VENDORED_GUARD
         if not os.path.exists(vendored):
             return
         if os.path.abspath(vendored) == os.path.abspath(__file__):
@@ -387,8 +394,56 @@ class Guard(object):
             '--install-ci and commit the result' % (vendored, stamped, VERSION),
         )
 
+    def check_enforcement(self):
+        """The enforcement layer is still installed, and still joined up.
+
+        `vendored` catches a copy that drifted. It cannot catch one that is gone:
+        with nothing on disk there is nothing to compare, so deleting
+        .quorum/guard.py silently buys back everything the guard was refusing.
+        Deleting the workflow with it makes even the absence symmetrical.
+
+        Two signals, because neither covers the other. The diff catches a removal
+        as it happens, including both files going together. The paired check
+        catches a repo already sitting in a half-installed state, which no diff
+        window reaches — and a workflow whose checker is missing is a job that
+        errors on every run, which is the kind of noise people switch off.
+
+        A repo that never vendored has neither file and is not doing anything
+        wrong. Silence is the correct answer there.
+        """
+        rows = self.changed_files()
+        if rows is not None:
+            for status, path in rows:
+                if status == 'D' and path in (VENDORED_GUARD, VENDORED_FLOW):
+                    self.fail(
+                        'enforcement',
+                        '%s deleted; this change removes the enforcement that runs '
+                        'where no agent can reach it' % path,
+                    )
+                elif status == 'M' and path == VENDORED_FLOW:
+                    self.note(
+                        '%s was modified — confirm the guard step still runs'
+                        % VENDORED_FLOW
+                    )
+
+        have_guard = os.path.exists(VENDORED_GUARD)
+        have_flow = os.path.exists(VENDORED_FLOW)
+        if have_flow and not have_guard:
+            self.fail(
+                'enforcement',
+                '%s runs %s, which is not in the repository; the job fails on every '
+                'push' % (VENDORED_FLOW, VENDORED_GUARD),
+            )
+        elif have_guard and not have_flow:
+            self.fail(
+                'enforcement',
+                '%s is vendored but %s is gone, so nothing runs it; re-run '
+                'guard.py --install-ci' % (VENDORED_GUARD, VENDORED_FLOW),
+            )
+
     def run(self):
         self.check_vendored()
+        self.check_enforcement()
         self.check_requirements()
         self.check_tests()
         self.check_reviews()

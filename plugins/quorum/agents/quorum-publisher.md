@@ -107,11 +107,28 @@ naming the violation is how a human finds out.
 
 If the guard cannot run, say so in the body rather than implying it passed.
 
+Use the plugin's copy, as above — **not** a vendored `.quorum/guard.py`. The
+vendored copy skips the drift check, because a file cannot tell whether it has
+drifted from itself, and drift is one of the rules.
+
+Then ask whether the gate is actually live:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/bin/guard.py" --check-gate
+```
+
+Writing the workflow is not the gate; branch protection requiring it is, and that
+is a repo-admin setting an unticked box makes indistinguishable from a working
+one. Put the answer in the body as a single line — LIVE, NOT LIVE, or that it
+could not tell. **Never round "could not tell" up to a pass**, and do not draft
+the pull request over it: whether to protect the branch is the repository
+owner's call, not a defect in this change.
+
 ## Finish
 
 Record the state per the contract's `state.json` section: stage `published`, and
 a `pr` object with the URL and whether it is a draft, and a `guard` object with
-`clean` and the violation count. If you could not publish,
+`clean`, the violation count, and `gate` as `live`, `not-live`, or `unknown`. If you could not publish,
 record no `pr` and say why in the log line — a state file claiming a PR that does
 not exist is worse than one that admits the branch is unpublished.
 

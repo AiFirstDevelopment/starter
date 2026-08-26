@@ -77,6 +77,19 @@ Whether it is live is checkable rather than assumed:
 python3 "${CLAUDE_PLUGIN_ROOT}/bin/guard.py" --check-gate
 ```
 
+`/quorum:pipeline` runs this on every publish and puts the answer in the pull
+request body, so the question gets asked on its own rather than only when someone
+remembers to. It reports LIVE, NOT LIVE, or that it could not tell — and
+**`could not tell` is never rounded up to a pass**. It does not draft the pull
+request over a missing gate: protecting the branch is the repository owner's
+decision, not a defect in the change under review.
+
+Deleting the vendored checker is itself a violation. `enforcement` watches for
+either `.quorum/guard.py` or its workflow disappearing — including both at once,
+which is what switching the gate off actually looks like — and for the
+half-installed states where one exists without the other. A repo that never
+vendored has neither and hears nothing.
+
 It reports `LIVE`, `NOT LIVE`, or `cannot tell` — and `cannot tell` (no `gh`, or
 no admin rights to read branch protection) is reported as its own answer rather
 than rounded up to a pass.
