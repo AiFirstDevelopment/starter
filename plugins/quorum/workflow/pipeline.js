@@ -202,6 +202,30 @@ if (!skipBuild) {
 phase('Review')
 log('Running ' + LENSES.length + ' independent review lenses in fresh context.')
 
+// parallel() is a barrier, so without this the longest phase in the run reports
+// nothing between "six started" and "six finished" — one slow lens hiding five
+// that already landed. Each lens announces itself as it returns instead. The
+// count is completion order, not lens order, which is the useful ordering: it
+// says how much is left, and which lens is the one still out.
+let lensesDone = 0
+
+function announce(lens, result) {
+  lensesDone++
+  const at = ' (' + lensesDone + '/' + LENSES.length + ')'
+  if (!result) {
+    log('review:' + lens.key + ' returned nothing' + at)
+    return result
+  }
+  const found = result.findings || []
+  const blocking = found.filter(function (f) { return f.severity === 'blocker' }).length
+  const summary = found.length
+    ? found.length + ' finding' + (found.length === 1 ? '' : 's') +
+      (blocking ? ', ' + blocking + ' blocker' + (blocking === 1 ? '' : 's') : '')
+    : 'clean'
+  log('review:' + lens.key + ' — ' + summary + at)
+  return result
+}
+
 const reviews = (
   await parallel(
     LENSES.map(function (lens) {
@@ -234,7 +258,9 @@ const reviews = (
             },
             models[lens.key] ? { model: models[lens.key] } : {}
           )
-        )
+        ).then(function (result) {
+          return announce(lens, result)
+        })
       }
     })
   )
