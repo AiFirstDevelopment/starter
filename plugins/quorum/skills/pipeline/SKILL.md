@@ -197,9 +197,18 @@ Monitor({
 })
 ```
 
-One line per observable change — a step ticked, reviews recorded, the stage
-moving, `verdict.md` written — read from the repository's own files. It stops
-itself when the item reaches `published`.
+It names the outstanding steps once, then reports each as it finishes:
+
+```
+3 step(s) left:
+  S2 Write src/rng.js (seeded mulberry32) and src/game.js
+  S3 Write tests/unit/game.test.mjs using node:test
+S2 done (2/3) Write src/rng.js (seeded mulberry32) and src/game.js
+```
+
+Plus reviews recorded, the stage moving, and `verdict.md` written — all read from
+the repository's own files. One line per change and nothing when nothing moved. It
+stops itself when the item reaches `published`.
 
 Each report carries elapsed time and, once this repo has finished **two or more**
 runs, an estimate of the minutes left: the median of what previous runs took,

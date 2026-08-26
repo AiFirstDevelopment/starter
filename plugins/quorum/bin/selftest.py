@@ -54,6 +54,11 @@ Make the widget retry.
 ## Approach
 
 Use the existing retry helper.
+
+## Steps
+
+- [ ] S1: Add the retry wrapper around the transport call
+- [ ] S2: Surface the final failure to the caller
 """
 
 TESTS = """it('retries three times', () => { expect(1).toBe(1) })
@@ -372,6 +377,14 @@ def test_lifetime():
 
 # --------------------------------------------------------------------- watching
 
+def _load_watch():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('quorum_watch', WATCH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_watch():
     """Progress comes from the repo's own files, and only when it moves.
 
@@ -395,11 +408,23 @@ def test_watch():
         check('watch repeats nothing when nothing moved',
               again == first, 'first=%s again=%s' % (first, again))
 
-        # the builder ticking a step is the one live signal during a long build
-        plan = read(repo, 'docs/work/demo/plan.md')
-        write(repo, 'docs/work/demo/plan.md', plan.replace('- [ ] AC1', '- [x] AC1', 1))
+        # naming beats counting: "S2 done - surface the failure" tells a watcher
+        # what just finished, where "2/2 ticked" only tells them how far along
         code, out, _ = run(['python3', WATCH, 'docs/work/demo', '--once'], cwd=repo)
-        check('watch sees a step get ticked', 'steps ticked' in out, out.strip())
+        check('watch names the steps still outstanding',
+              'S1 ' in out and 'S2 ' in out and 'step(s) left' in out, out.strip())
+
+        plan = read(repo, 'docs/work/demo/plan.md')
+        write(repo, 'docs/work/demo/plan.md', plan.replace('- [ ] S2:', '- [x] S2:', 1))
+        watch_mod = _load_watch()
+        before = {'steps_list': watch_mod.parse_steps(plan), 'ticked': 0, 'steps': 2,
+                  'reviews': [], 'stage': '', 'last': '', 'verdict': False, 'raw': {}}
+        after = watch_mod.snapshot(os.path.join(repo, 'docs/work/demo'))
+        moved = watch_mod.differences(before, after)
+        check('watch reports which step finished, by name and title',
+              any(l.startswith('S2 done (1/2)') and 'Surface' in l for l in moved), moved)
+        check('a ticked step is reported once, not on every look',
+              watch_mod.differences(after, after) == [], watch_mod.differences(after, after))
 
         os.makedirs(os.path.join(work, 'reviews'), exist_ok=True)
         write(repo, 'docs/work/demo/reviews/002-security.md', '# Review\n')
@@ -460,13 +485,17 @@ def test_watch():
         check('an unchanged item produces no lines at all',
               watch.differences(was, was) == [], watch.differences(was, was))
 
-        moved = dict(was)
-        moved['ticked'] = was['ticked'] + 1
-        moved['steps'] = max(was['steps'], moved['ticked'])
-        check('one more ticked step produces exactly one line',
-              len(watch.differences(was, moved)) == 1
-              and 'steps ticked' in watch.differences(was, moved)[0],
-              watch.differences(was, moved))
+        # A plan that does not use the S<n> convention still gets progress, from
+        # the raw checkbox count. Named steps take precedence when they exist, so
+        # this branch is only reachable with an empty step list.
+        plain = dict(was)
+        plain['steps_list'] = []
+        plain['ticked'], plain['steps'] = 1, 4
+        bumped = dict(plain)
+        bumped['ticked'] = 2
+        lines = watch.differences(plain, bumped)
+        check('a plan without named steps still reports a count',
+              lines == ['build: 2/4 steps ticked'], lines)
 
         staged = dict(was)
         staged['stage'] = 'adjudicated'

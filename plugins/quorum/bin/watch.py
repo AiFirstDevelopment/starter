@@ -30,11 +30,33 @@ Exits 0 when the item reaches a terminal stage, or when --max-seconds runs out.
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime
 
 TERMINAL = ('published',)
+
+
+STEP = re.compile(r'^-\s*\[([ xX])\]\s*(S\d+)\s*:\s*(.+?)\s*$', re.M)
+
+
+def parse_steps(plan):
+    """The plan's Steps list: which ones exist, and which are done.
+
+    Named steps beat a bare count. "4/9 ticked" says how far along a build is;
+    "S4 done - build the page" says what it just finished, which is the thing
+    somebody watching actually wants to know.
+    """
+    out = []
+    for mark, ident, title in STEP.findall(plan):
+        out.append({'id': ident, 'title': title, 'done': mark.lower() == 'x'})
+    return out
+
+
+def short(title, width=58):
+    title = title.rstrip(' -\u2014,;')
+    return title if len(title) <= width else title[:width - 1].rstrip() + '\u2026'
 
 
 def stamps(state):
@@ -143,6 +165,7 @@ def snapshot(work_dir):
 
     return {
         'raw': state,
+        'steps_list': parse_steps(plan),
         'ticked': done,
         'steps': total,
         'reviews': reviews,
@@ -159,7 +182,18 @@ def differences(before, now):
     if now['stage'] and now['stage'] != before['stage']:
         lines.append('stage: %s' % now['stage'])
 
-    if now['ticked'] != before['ticked'] and now['steps']:
+    # Name what finished. Falls back to a count only when the plan does not use
+    # the S<n> convention, since a number is better than silence.
+    was_done = set(s['id'] for s in before.get('steps_list', []) if s['done'])
+    now_list = now.get('steps_list', [])
+    total = len(now_list)
+    fresh = [s for s in now_list if s['done'] and s['id'] not in was_done]
+    if fresh:
+        done_count = sum(1 for s in now_list if s['done'])
+        for step in fresh:
+            lines.append('%s done (%d/%d) %s'
+                         % (step['id'], done_count, total, short(step['title'])))
+    elif not now_list and now['ticked'] != before['ticked'] and now['steps']:
         lines.append('build: %d/%d steps ticked' % (now['ticked'], now['steps']))
 
     fresh = [r for r in now['reviews'] if r not in before['reviews']]
@@ -209,6 +243,11 @@ def main():
                   'verdict': False})
     for line in differences(start, state):
         print(line)
+    roster = [s for s in state.get('steps_list', []) if not s['done']]
+    if roster:
+        print('%d step(s) left:' % len(roster))
+        for step in roster:
+            print('  %s %s' % (step['id'], short(step['title'])))
     hint = progress_line(state)
     if hint:
         print(hint)
