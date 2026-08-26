@@ -200,15 +200,26 @@ Monitor({
 It names the outstanding steps once, then reports each as it finishes:
 
 ```
+stage: building
 3 step(s) left:
-  S2 Write src/rng.js (seeded mulberry32) and src/game.js
-  S3 Write tests/unit/game.test.mjs using node:test
-S2 done (2/3) Write src/rng.js (seeded mulberry32) and src/game.js
+  S1 — Add package.json and the Vite scaffold
+  S2 — Write src/rng.js (seeded mulberry32) and src/game.js
+  S3 — Write tests/unit/game.test.mjs using node:test
+elapsed 2m · previous 3 runs took 18m–41m (median 23m) · roughly 21m left
+
+S1 — Add package.json and the Vite scaffold  [done 1/3]
 ```
 
 Plus reviews recorded, the stage moving, and `verdict.md` written — all read from
 the repository's own files. One line per change and nothing when nothing moved. It
 stops itself when the item reaches `published`.
+
+**Pass these lines through as they arrive. Do not summarise them.** The step list
+is the point: it tells the user what the run will do, in their own plan's words,
+before it does any of it. "All 9 steps outstanding" throws that away and leaves
+them with a number, and "waiting on S1" names an identifier that means nothing
+without the title beside it. If you add anything, add it after the lines, not
+instead of them.
 
 Each report carries elapsed time and, once this repo has finished **two or more**
 runs, an estimate of the minutes left: the median of what previous runs took,

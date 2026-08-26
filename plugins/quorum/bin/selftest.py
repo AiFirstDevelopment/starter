@@ -16,6 +16,7 @@ it is the failure that has already cost two runs.
 Exit 0 all passed, 1 something regressed.
 """
 
+import datetime
 import json
 import os
 import re
@@ -422,7 +423,8 @@ def test_watch():
         after = watch_mod.snapshot(os.path.join(repo, 'docs/work/demo'))
         moved = watch_mod.differences(before, after)
         check('watch reports which step finished, by name and title',
-              any(l.startswith('S2 done (1/2)') and 'Surface' in l for l in moved), moved)
+              any(l.startswith('S2 \u2014 ') and 'Surface' in l and '[done 1/2]' in l
+                  for l in moved), moved)
         check('a ticked step is reported once, not on every look',
               watch_mod.differences(after, after) == [], watch_mod.differences(after, after))
 
@@ -445,6 +447,36 @@ def test_watch():
         est = _il.module_from_spec(_spec)
         _spec.loader.exec_module(est)
 
+        # --- elapsed must time THIS attempt, not the work item ---------------
+        def stamp(mins_ago):
+            when = datetime.datetime.utcnow() - datetime.timedelta(minutes=mins_ago)
+            return when.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+        four_tries = {'log': [
+            '%s pipeline launched' % stamp(70),
+            '%s run died before build; approval reset' % stamp(64),
+            '%s pipeline launched' % stamp(40),
+            '%s run died before build; approval reset' % stamp(33),
+            '%s pipeline launched' % stamp(2),
+        ]}
+        start, end = est.run_window(four_tries)
+        age = (datetime.datetime.utcnow() - start).total_seconds() / 60.0
+        check('elapsed times the latest attempt, not the whole work item',
+              1 <= age <= 4, 'measured %.1f minutes, the item is 70 minutes old' % age)
+
+        check('an item never launched by the pipeline has no run to time',
+              est.run_window({'log': ['%s planned' % stamp(30)]}) == (None, None),
+              est.run_window({'log': ['%s planned' % stamp(30)]}))
+        check('an empty log has no run to time',
+              est.run_window({}) == (None, None), est.run_window({}))
+
+        one_try = {'log': ['%s pipeline launched' % stamp(30),
+                           '%s published' % stamp(10)]}
+        start, end = est.run_window(one_try)
+        check('a single attempt measures launch to last event',
+              round((end - start).total_seconds() / 60.0) == 20,
+              (end - start).total_seconds())
+
         check('one prior run is not a distribution',
               'no estimate' in est.estimate(600, [1200]), est.estimate(600, [1200]))
         check('no prior runs is not a distribution',
@@ -464,14 +496,32 @@ def test_watch():
 
         # and it must read only finished runs
         write(repo, 'docs/work/done-a/state.json', json.dumps({'stage': 'published',
-              'log': ['2026-01-01T09:00:00Z a', '2026-01-01T09:20:00Z b']}))
+              'log': ['2026-01-01T09:00:00Z pipeline launched',
+                      '2026-01-01T09:20:00Z published']}))
         write(repo, 'docs/work/done-b/state.json', json.dumps({'stage': 'published',
-              'log': ['2026-01-01T09:00:00Z a', '2026-01-01T09:40:00Z b']}))
+              'log': ['2026-01-01T09:00:00Z pipeline launched',
+                      '2026-01-01T09:40:00Z published']}))
         write(repo, 'docs/work/mid/state.json', json.dumps({'stage': 'building',
-              'log': ['2026-01-01T09:00:00Z a', '2026-01-01T12:00:00Z b']}))
+              'log': ['2026-01-01T09:00:00Z pipeline launched',
+                      '2026-01-01T12:00:00Z still going']}))
+        write(repo, 'docs/work/handbuilt/state.json', json.dumps({'stage': 'published',
+              'log': ['2026-01-01T09:00:00Z built by hand',
+                      '2026-01-01T09:50:00Z published']}))
         totals = est.completed_runs(os.path.join(repo, 'docs/work'))
         check('only finished runs count toward the estimate',
               totals == [1200, 2400], 'got %s' % totals)
+        check('an item the pipeline never launched contributes nothing',
+              3000 not in totals, 'got %s' % totals)
+
+        # a retried item must contribute its last attempt, not its whole lifetime
+        write(repo, 'docs/work/retried/state.json', json.dumps({'stage': 'published',
+              'log': ['2026-01-01T09:00:00Z pipeline launched',
+                      '2026-01-01T09:30:00Z run died before build; approval reset',
+                      '2026-01-01T10:00:00Z pipeline launched',
+                      '2026-01-01T10:15:00Z published']}))
+        totals = est.completed_runs(os.path.join(repo, 'docs/work'))
+        check('a retried item contributes only its successful attempt',
+              900 in totals and 4500 not in totals, 'got %s' % totals)
 
         # --once cannot test change detection: every invocation starts from a
         # fresh baseline, so it emits the same lines whether or not the diff

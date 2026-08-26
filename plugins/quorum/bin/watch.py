@@ -59,19 +59,48 @@ def short(title, width=58):
     return title if len(title) <= width else title[:width - 1].rstrip() + '\u2026'
 
 
-def stamps(state):
-    """The timestamps state.py wrote, oldest first."""
+LAUNCH = 'pipeline launched'
+
+
+def entries(state):
+    """(timestamp, text) for each line state.py wrote, oldest first."""
     log = state.get('log')
     if not isinstance(log, list):
         return []
     out = []
     for line in log:
-        head = str(line).split(' ', 1)[0]
+        parts = str(line).split(' ', 1)
+        if len(parts) != 2:
+            continue
         try:
-            out.append(datetime.strptime(head, '%Y-%m-%dT%H:%M:%SZ'))
+            out.append((datetime.strptime(parts[0], '%Y-%m-%dT%H:%M:%SZ'), parts[1]))
         except ValueError:
             continue
     return out
+
+
+def run_window(state):
+    """When the CURRENT attempt started, and when it last moved.
+
+    The log accumulates across attempts, so the earliest entry is the earliest
+    attempt — measuring from it reports the age of the work item, not the age of
+    the run. On a fourth try that reads as seventy minutes elapsed when the run
+    is two minutes old, which is worse than reporting nothing.
+
+    The last launch marker is the anchor. Without one — a work item driven by
+    hand through 2-build and friends, which never launches a pipeline — there is
+    no run to time, and this says so rather than picking a stamp that looks close.
+    """
+    marks = entries(state)
+    if not marks:
+        return None, None
+    start = None
+    for when, text in marks:
+        if LAUNCH in text:
+            start = when
+    if start is None:
+        return None, None
+    return start, marks[-1][0]
 
 
 def completed_runs(work_root):
@@ -95,9 +124,9 @@ def completed_runs(work_root):
             continue
         if not isinstance(state, dict) or state.get('stage') not in TERMINAL:
             continue
-        marks = stamps(state)
-        if len(marks) >= 2:
-            totals.append(int((marks[-1] - marks[0]).total_seconds()))
+        start, end = run_window(state)
+        if start and end and end > start:
+            totals.append(int((end - start).total_seconds()))
     return sorted(totals)
 
 
@@ -191,8 +220,8 @@ def differences(before, now):
     if fresh:
         done_count = sum(1 for s in now_list if s['done'])
         for step in fresh:
-            lines.append('%s done (%d/%d) %s'
-                         % (step['id'], done_count, total, short(step['title'])))
+            lines.append('%s \u2014 %s  [done %d/%d]'
+                         % (step['id'], short(step['title']), done_count, total))
     elif not now_list and now['ticked'] != before['ticked'] and now['steps']:
         lines.append('build: %d/%d steps ticked' % (now['ticked'], now['steps']))
 
@@ -229,10 +258,10 @@ def main():
     totals = completed_runs(work_root)
 
     def progress_line(now):
-        marks = stamps(now.get('raw', {}))
-        if not marks:
+        start, _ = run_window(now.get('raw', {}))
+        if start is None:
             return ''
-        elapsed = int((datetime.utcnow() - marks[0]).total_seconds())
+        elapsed = int((datetime.utcnow() - start).total_seconds())
         if elapsed < 0:
             return ''
         return 'elapsed %s \u00b7 %s' % (minutes(elapsed), estimate(elapsed, totals))
@@ -247,7 +276,7 @@ def main():
     if roster:
         print('%d step(s) left:' % len(roster))
         for step in roster:
-            print('  %s %s' % (step['id'], short(step['title'])))
+            print('  %s \u2014 %s' % (step['id'], short(step['title'])))
     hint = progress_line(state)
     if hint:
         print(hint)
