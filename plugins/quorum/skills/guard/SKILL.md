@@ -17,8 +17,13 @@ are the ones a machine can settle, so a machine settles them.
 | `tests` | a test file deleted, test cases removed, or a new `skip` / `only` marker |
 | `reviews` | an existing review file modified or deleted — the record is append-only |
 | `verdict` | `ready` over a red suite, alongside open escalations, or with an unmet criterion |
-| `evidence` | a criterion marked met cites a file that does not exist |
+| `coverage` | a criterion in the plan is missing from the verdict, or the verdict invented one |
+| `evidence` | a criterion marked met cites a file, or a line, that does not exist |
 | `branch` | work item artifacts sitting on the default branch |
+
+`coverage` closes the quietest way to pass: an unmet criterion **omitted** from
+the verdict reads exactly like success. Silence about AC4 is not evidence about
+AC4.
 
 `only` deserves its own mention: one `it.only(...)` disables every other test in
 the file while the suite still reports green. It is the quietest way to buy a
@@ -58,6 +63,29 @@ repository's branch protection settings. Until that box is ticked the workflow
 reports and nothing more; after it, a violation blocks the merge no matter what
 any verdict claims. That last step is in the hosting UI and nobody but a repo
 admin can do it — say so rather than implying the gate is live.
+
+Whether it is live is checkable rather than assumed:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/bin/guard.py" --check-gate
+```
+
+It reports `LIVE`, `NOT LIVE`, or `cannot tell` — and `cannot tell` (no `gh`, or
+no admin rights to read branch protection) is reported as its own answer rather
+than rounded up to a pass.
+
+## Testing the checker itself
+
+The guard is now what the pipeline's promises rest on, so it has its own suite:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/bin/selftest.py" -v
+```
+
+It builds throwaway repositories, breaks each rule deliberately, and asserts the
+rule fires — and that legitimate edits (ticking a checkbox, appending a review,
+editing *Approach*) are still allowed. A checker that cannot be shown to fail is
+exactly the merge gate this project tells everyone else not to trust.
 
 ## The one rule enforced before the fact
 

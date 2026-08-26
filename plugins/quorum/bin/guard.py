@@ -8,11 +8,12 @@ of. These are the ones a machine can settle, so a machine settles them:
   tests          no test file deleted, no test case removed, no new skip or .only
   reviews        the review record is append-only
   verdict        the verdict does not contradict itself
-  evidence       files cited as proof that a criterion is met actually exist
+  coverage       every acceptance criterion in the plan is accounted for
+  evidence       files and lines cited as proof of a met criterion actually exist
   branch         work is not happening on the default branch
 
 Usage:
-  guard.py [--work-dir docs/work/<slug>] [--base <ref>] [--json]
+  guard.py [--work-dir docs/work/<slug>] [--base <ref>] [--json] [--check-gate]
   guard.py --hash docs/work/<slug>/plan.md      # baseline for the requirements rule
   guard.py --install-ci                         # vendor into the repo + CI workflow
 
@@ -235,6 +236,32 @@ class Guard(object):
         if st.get('suite') == 'red' and str(st.get('outcome', '')).startswith('ready'):
             self.fail('verdict', 'state.json records a red suite with outcome "%s"' % st['outcome'])
 
+    def check_coverage(self):
+        """An unmet criterion can be hidden by omission as easily as by lying
+        about it. Silence about AC4 reads exactly like success."""
+        plan = os.path.join(self.work_dir, 'plan.md')
+        verdict = os.path.join(self.work_dir, 'verdict.md')
+        if not (os.path.exists(plan) and os.path.exists(verdict)):
+            return
+        with open(plan) as handle:
+            planned = set(re.findall(r'^\s*[-*]\s*\[[ xX]\]\s*(AC\d+)\b', handle.read(), re.M))
+        if not planned:
+            return
+        with open(verdict) as handle:
+            judged = set(re.findall(r'^\|\s*\**(AC\d+)\**\s*\|', handle.read(), re.M | re.I))
+
+        for missing in sorted(planned - judged, key=ac_order):
+            self.fail(
+                'coverage',
+                '%s is in the plan and absent from the verdict — a criterion nobody '
+                'judged is not a criterion met' % missing,
+            )
+        for phantom in sorted(judged - planned, key=ac_order):
+            self.fail(
+                'coverage',
+                '%s appears in the verdict and not in the plan' % phantom,
+            )
+
     def check_evidence(self):
         """A criterion marked met cites a file. If the file is not there, the
         citation is decoration."""
@@ -243,17 +270,42 @@ class Guard(object):
             return
         with open(path) as handle:
             text = handle.read()
-        for row in re.findall(r'^\|\s*(AC\d+)\s*\|\s*\**yes\**\s*\|([^|]*)\|', text, re.M | re.I):
+        seen = {}
+        for row in re.findall(r'^\|\s*\**(AC\d+)\**\s*\|\s*\**yes\**\s*\|([^|]*)\|', text, re.M | re.I):
             ac, evidence = row
-            for cited in re.findall(r'`([^`]+?)(?::\d+)?`', evidence):
-                cited = cited.strip()
-                if '/' not in cited and '.' not in cited:
+            cites = [c.strip() for c in re.findall(r'`([^`]+)`', evidence)]
+            if not cites:
+                self.note('%s is marked met with no file cited' % ac)
+            for cited in cites:
+                path_part = cited.split(':')[0]
+                if '/' not in path_part and '.' not in path_part:
                     continue
-                if not os.path.exists(cited.split(':')[0]):
+                if not os.path.exists(path_part):
                     self.fail(
                         'evidence',
                         '%s is marked met, citing `%s`, which does not exist' % (ac, cited),
                     )
+                    continue
+                line = re.search(r':(\d+)', cited)
+                if line:
+                    wanted = int(line.group(1))
+                    with open(path_part, 'rb') as handle:
+                        total = sum(1 for _ in handle)
+                    if wanted > total:
+                        self.fail(
+                            'evidence',
+                            '%s cites `%s`, but that file has only %d lines'
+                            % (ac, cited, total),
+                        )
+                seen.setdefault(path_part, []).append(ac)
+
+        for path_part, acs in seen.items():
+            if len(acs) > 2:
+                self.note(
+                    '%s criteria (%s) all rest on %s — one citation covering many '
+                    'criteria is worth a closer look'
+                    % (len(acs), ', '.join(acs), path_part)
+                )
 
     def check_branch(self):
         current = (self.git('branch', '--show-current') or '').strip()
@@ -273,6 +325,7 @@ class Guard(object):
         self.check_tests()
         self.check_reviews()
         self.check_verdict()
+        self.check_coverage()
         self.check_evidence()
         self.check_branch()
         return self.violations
@@ -283,6 +336,11 @@ class Guard(object):
 
 def count(pattern, text):
     return len(pattern.findall(text or ''))
+
+
+def ac_order(name):
+    digits = re.search(r'\d+', name)
+    return int(digits.group()) if digits else 0
 
 
 def sections(text):
@@ -361,6 +419,58 @@ def resolve_work_dir(explicit):
     return candidate
 
 
+def check_gate():
+    """Report whether the CI check is actually a required status check.
+
+    Writing the workflow is not the gate. The gate is branch protection
+    requiring it, which is a repo-admin action in the hosting UI — so an
+    unticked box looks identical to a working gate from in here unless
+    somebody asks.
+    """
+    try:
+        out = subprocess.check_output(
+            ['gh', 'api', 'repos/{owner}/{repo}/rulesets', '--jq', '.[].name'],
+            stderr=subprocess.DEVNULL,
+        ).decode()
+    except (subprocess.CalledProcessError, OSError):
+        out = None
+
+    checks = None
+    for endpoint in (
+        'repos/{owner}/{repo}/branches/main/protection',
+        'repos/{owner}/{repo}/branches/master/protection',
+    ):
+        try:
+            raw = subprocess.check_output(
+                ['gh', 'api', endpoint], stderr=subprocess.DEVNULL
+            ).decode()
+        except (subprocess.CalledProcessError, OSError):
+            continue
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            continue
+        checks = (data.get('required_status_checks') or {}).get('contexts') or []
+        break
+
+    if checks is None:
+        if out is None:
+            print('gate: cannot tell — `gh` is unavailable or not authenticated here.')
+        else:
+            print('gate: cannot read branch protection (admin access is needed to query it).')
+        print('      Verify by hand that "quorum guard" is a required status check.')
+        return 0
+
+    if any('quorum' in c.lower() for c in checks):
+        print('gate: LIVE — "quorum guard" is a required status check.')
+        return 0
+
+    print('gate: NOT LIVE — the workflow may run, but nothing blocks a merge on it.')
+    print('      Required checks currently: %s' % (', '.join(checks) or 'none'))
+    print('      Add "quorum guard" in branch protection to make it a gate.')
+    return 1
+
+
 def install_ci():
     target = os.path.join('.quorum', 'guard.py')
     if not os.path.isdir('.quorum'):
@@ -377,8 +487,12 @@ def install_ci():
         handle.write(CI_WORKFLOW)
 
     print('Wrote %s and %s' % (target, flow))
+    print('')
     print('Commit both, then make "quorum guard" a required status check in your')
     print('branch protection settings — that is what turns it into a real gate.')
+    print('Until then the workflow reports and nothing blocks a merge on it.')
+    print('')
+    print('Check whether it is live with:  guard.py --check-gate')
     return 0
 
 
@@ -389,7 +503,11 @@ def main():
     parser.add_argument('--json', action='store_true')
     parser.add_argument('--install-ci', action='store_true')
     parser.add_argument('--hash', metavar='PLAN')
+    parser.add_argument('--check-gate', action='store_true')
     opts = parser.parse_args()
+
+    if opts.check_gate:
+        return check_gate()
 
     if opts.install_ci:
         return install_ci()

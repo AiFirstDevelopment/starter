@@ -119,6 +119,26 @@ Workflow({
 Pass `args.skipBuild: true` only when the code is already written and the user
 wants review and adjudication over the existing working tree.
 
+### Which model runs what
+
+The judge and the recheck run on **different models by default**, because the
+recheck exists to catch what the judge could not see in its own work, and the
+same weights reviewing themselves see the same things. That decorrelation costs
+no capability, so it is not optional.
+
+The six lenses inherit the session model. Spreading them across tiers buys
+diversity and spends per-lens capability, and there is no evidence here on which
+way that trades — so it is offered rather than assumed:
+
+```
+args: { models: { correctness: "opus", simplicity: "sonnet", recheck: "haiku" } }
+```
+
+Every option is a Claude model, so this **reduces** correlated blind spots rather
+than removing them. A genuinely independent panel would span providers, which
+this harness cannot do — worth saying plainly rather than implying the panel is
+more independent than it is.
+
 Do not re-implement the orchestration by hand and do not spawn the agents
 yourself — the script exists so the sequence is identical every run and so a
 failed run can be resumed rather than re-paid for.

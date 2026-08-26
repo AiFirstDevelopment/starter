@@ -3,7 +3,7 @@
 An honest look at where this pipeline sits against the tools it overlaps with,
 and where it is still weaker than its own prose suggests.
 
-Last updated after the guard work (v0.3.0).
+Last updated after the decorrelation and self-test work (v0.4.0).
 
 ## The landscape
 
@@ -70,27 +70,51 @@ on top" — opposite situations that mtime-based staleness cannot distinguish.
 
 ## What is still weaker than it sounds
 
-**Correlated blind spots.** Six lenses on one base model are six views from one
-vantage point. The diversity is prompt-deep, not model-deep: a failure mode the
-model does not recognise is one no lens will catch. Running lenses across
-different model families would be genuinely more independent, and is the largest
-available improvement not yet made.
+**Correlated blind spots — reduced, not removed.** The judge and the recheck now
+run on different models by default, which is the case that matters most: one
+agent checking another's work, where shared weights mean shared blind spots. The
+six lenses can be spread across model tiers too, but that is offered rather than
+assumed, because diversity there is bought with per-lens capability and there is
+no evidence here on which way that trades.
 
-**The judgment-dependent rules are still prose.** The guard settles what a
-machine can settle. "Never mark an acceptance criterion met when it is not" is
-only partly checkable — the guard verifies that cited evidence exists, not that
-it proves anything. A confident, wrong "AC3: met" still passes.
+What remains is the harder half. Every option is a Claude model, so the panel
+is less correlated than it was and nowhere near independent. Genuine
+independence would mean spanning providers, which this harness cannot do. Treat
+six agreeing lenses as one careful opinion, not six.
 
-**The last gate is a human action.** CI enforcement only becomes a gate once
-`quorum guard` is a required status check in branch protection. Until a repo
-admin ticks that box, the workflow reports and nothing more.
+**The judgment-dependent rules are still prose, but less of them.** The guard
+now catches the structural half of "never mark a criterion met when it is not":
+a criterion **omitted** from the verdict is a violation, since silence about AC4
+reads exactly like success; a criterion the verdict invented is too; and cited
+evidence must name a file that exists and a line inside it.
+
+What no checker settles is whether the cited test proves the criterion. A
+confident, wrong "AC3: met, see `foo.test.js:31`" — with a real file and a real
+line — still passes. That is a judgment, and judgment is what this system spends
+six lenses and a judge on precisely because it cannot be checked.
+
+**The last gate is still a human action, but no longer an invisible one.** CI
+enforcement becomes a gate only when `quorum guard` is a required status check.
+`guard.py --check-gate` now reports whether it actually is — `LIVE`, `NOT LIVE`,
+or `cannot tell` — so an unticked box stops looking identical to a working gate.
+Nobody here can tick it; a repo admin must.
 
 **Cost.** Up to thirteen agents per run against one pass from a PR bot. This is
 appropriate for a branch you are about to merge and absurd for a typo.
 
-**No benchmark.** SWE-bench numbers exist for the autonomous coders. Quorum has
-none. Everything above is a design argument, not a measurement, and design
+**No benchmark for the part that needs one.** The enforcement layer is now
+tested: `selftest.py` builds throwaway repositories, breaks each rule
+deliberately, and asserts it fires — and the suite itself was checked by
+disabling each rule and confirming the tests go red. That is a real measurement
+of the mechanical half.
+
+The half that matters more is still unmeasured. There is no benchmark for
+whether six lenses catch more real defects than one careful pass, and no
+SWE-bench-style number to compare against the autonomous coders. Everything
+about review quality here is a design argument, not a measurement — and design
 arguments are exactly the kind of claim this pipeline was built to distrust.
+Applying its own standard: this system asks you to take its review quality on
+faith.
 
 **The blast radius is a branch.** One approval authorizes an unattended run that
 writes code, reviews it, and applies fixes. That is the trade being made

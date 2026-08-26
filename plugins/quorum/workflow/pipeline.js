@@ -20,6 +20,28 @@ const skipPublish = !!(args && args.skipPublish)
 const skipRecheck = !!(args && args.skipRecheck)
 const MAX_JUDGE_PASSES = 2
 
+// Decorrelation. Six lenses on one model are six views from one vantage point:
+// a failure mode the model does not recognise is one that no lens catches, and
+// running the same weights six times does not fix that.
+//
+// Two different problems, handled differently:
+//
+//   The judge and the recheck are set to DIFFERENT models by default. This is
+//   the high-value case — one agent checking another's work — and it costs
+//   nothing in capability, so it is on by default.
+//
+//   The six lenses inherit the session model unless told otherwise. Spreading
+//   them across tiers buys diversity and spends per-lens capability, and there
+//   is no evidence here on which way that trades. It is offered, not assumed.
+//
+// Override any of it with args.models, e.g. {correctness: 'opus',
+// simplicity: 'sonnet', recheck: 'haiku'}. All options are Claude models, so
+// this reduces correlation rather than removing it; a genuinely independent
+// panel would span providers, which this harness cannot do.
+const models = (args && args.models) || {}
+const JUDGE_MODEL = models.judge || 'opus'
+const RECHECK_MODEL = models.recheck || 'sonnet'
+
 // Resolved once by /quorum:pipeline, which has a shell; this script does not.
 // Handing every lens the same range is what makes "they all reviewed the same
 // change" a fact rather than a hope.
@@ -196,12 +218,15 @@ const reviews = (
             'have a suspicion rather than a finding — verify it or drop it. Do not report that ' +
             'you would have written the code differently.\n\n' +
             'If your lens finds nothing, return verdict "clean". That is a useful result.',
-          {
-            label: 'review:' + lens.key,
-            phase: 'Review',
-            agentType: 'quorum-reviewer',
-            schema: FINDINGS_SCHEMA,
-          }
+          Object.assign(
+            {
+              label: 'review:' + lens.key,
+              phase: 'Review',
+              agentType: 'quorum-reviewer',
+              schema: FINDINGS_SCHEMA,
+            },
+            models[lens.key] ? { model: models[lens.key] } : {}
+          )
         )
       }
     })
@@ -302,7 +327,13 @@ while (pass < MAX_JUDGE_PASSES) {
       'Any escalation or unmet criterion means the outcome is "ready with follow-ups" or ' +
       '"blocked", never "ready".' +
       retry,
-    { label: 'judge:pass-' + pass, phase: 'Adjudicate', agentType: 'quorum-judge', schema: VERDICT_SCHEMA }
+    {
+      label: 'judge:pass-' + pass,
+      phase: 'Adjudicate',
+      agentType: 'quorum-judge',
+      schema: VERDICT_SCHEMA,
+      model: JUDGE_MODEL,
+    }
   )
 
   if (!verdict) { log('Judge pass ' + pass + ' returned nothing.'); continue }
@@ -350,8 +381,16 @@ if (skipRecheck) {
       'accommodate the fix, collateral damage to code the fix passed through.\n\n' +
       'The plan is at ' + planPath + '. Judge the code, not the verdict\'s account of it. ' +
       'Use lens "judge-diff". Report only what you can defend with a file, a line, and a ' +
-      'concrete failure scenario — a blocker here turns the pull request into a draft.',
-    { label: 'recheck:judge-diff', phase: 'Recheck', agentType: 'quorum-reviewer', schema: FINDINGS_SCHEMA }
+      'concrete failure scenario — a blocker here turns the pull request into a draft.\n\n' +
+      'You are deliberately running on a different model from the judge whose work you are ' +
+      'checking. Look where a reviewer sharing its assumptions would not.',
+    {
+      label: 'recheck:judge-diff',
+      phase: 'Recheck',
+      agentType: 'quorum-reviewer',
+      schema: FINDINGS_SCHEMA,
+      model: RECHECK_MODEL,
+    }
   )
 
   if (recheck && (recheck.findings || []).length) {
@@ -474,6 +513,8 @@ return {
   judgeDiffFindings: recheckFindings.length,
   judgeDiffBlockers: recheckBlockers,
   judgeDiffReviewed: !!recheck,
+  judgeModel: JUDGE_MODEL,
+  recheckModel: RECHECK_MODEL,
   verdictPath: 'docs/work/' + slug + '/verdict.md',
   published: published ? !!published.published : false,
   prUrl: published ? published.url : undefined,

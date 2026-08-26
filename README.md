@@ -365,7 +365,8 @@ the ones that do not depend on cooperation:
 | `tests` | a test file deleted, cases removed, or a new `skip` / `only` marker |
 | `reviews` | an existing review file modified or deleted |
 | `verdict` | `ready` over a red suite, with open escalations, or with an unmet criterion |
-| `evidence` | a criterion marked met cites a file that does not exist |
+| `coverage` | a criterion in the plan missing from the verdict, or one the verdict invented |
+| `evidence` | a criterion marked met cites a file, or a line, that does not exist |
 | `branch` | work item artifacts on the default branch |
 
 `only` earns its own row: a single `it.only(...)` disables every other test in the
@@ -385,6 +386,13 @@ and invisible in a summary line reading "42 passed".
    status check** in branch protection and a violation blocks the merge no matter
    what the verdict claims. That last step is a repo-admin action in the hosting
    UI; until it is done, the workflow reports and nothing more.
+
+`coverage` closes the quietest pass of all: an unmet criterion *omitted* from the
+verdict reads exactly like success.
+
+The checker has its own suite — `bin/selftest.py` breaks each rule in a throwaway
+repo and asserts it fires. A merge gate that cannot be shown to fail is the exact
+thing this project tells everyone else not to trust.
 
 A guard violation is **not a finding**. Findings are claims a judge weighs and may
 reject. These are rules the pipeline states it does not break, so nothing in the
