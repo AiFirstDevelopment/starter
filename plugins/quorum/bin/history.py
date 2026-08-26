@@ -36,6 +36,7 @@ import os
 import re
 import subprocess
 import sys
+from datetime import datetime
 
 WORK_ROOT = os.path.join('docs', 'work')
 TITLE = re.compile(r'^#\s+Plan:\s*(.+?)\s*$', re.M)
@@ -150,6 +151,47 @@ def last_touched(work_dir):
     return {'date': date, 'author': author}
 
 
+def elapsed(state):
+    """How long the work item took, from its own timestamped log.
+
+    state.py stamps every recorded event, so the log is already a timeline and
+    nothing new has to be measured. This is the only honest source: the workflow
+    script cannot read a clock at all — Date.now() throws there, deliberately, so
+    that a resumed run replays identically — and file mtimes lie after a checkout.
+
+    First to last recorded event, which is wall-clock across the whole item and
+    includes any time it sat waiting for a human. Reported as a duration that
+    happened, never as a prediction of the next one.
+    """
+    log = state.get('log')
+    if not isinstance(log, list) or len(log) < 2:
+        return {'seconds': None, 'from': '', 'to': ''}
+    stamps = []
+    for line in log:
+        parts = str(line).split(' ', 1)
+        if len(parts) == 2:
+            stamps.append(parts[0])
+    if len(stamps) < 2:
+        return {'seconds': None, 'from': '', 'to': ''}
+    try:
+        first = datetime.strptime(stamps[0], '%Y-%m-%dT%H:%M:%SZ')
+        last = datetime.strptime(stamps[-1], '%Y-%m-%dT%H:%M:%SZ')
+    except ValueError:
+        return {'seconds': None, 'from': '', 'to': ''}
+    return {'seconds': int((last - first).total_seconds()),
+            'from': stamps[0], 'to': stamps[-1]}
+
+
+def humanise(seconds):
+    if seconds is None:
+        return ''
+    if seconds < 90:
+        return '%ds' % seconds
+    if seconds < 5400:
+        return '%dm' % round(seconds / 60.0)
+    return '%.1fh' % (seconds / 3600.0)
+
+
 def read_state(work_dir):
     path = os.path.join(work_dir, 'state.json')
     if not os.path.exists(path):
@@ -196,6 +238,7 @@ def collect():
             'outcome': verdict.get('outcome', ''),
             'branch': branch,
             'pr': pr,
+            'elapsed': elapsed(state),
             'planned': started['date'],
             'author': started['author'],
             'email': started['email'],
@@ -265,6 +308,9 @@ def render(items, full):
             notes.append('with ' + ', '.join(item['agents']))
         for note in notes:
             print(indent + note)
+        took = humanise(item['elapsed']['seconds'])
+        if took:
+            print(indent + 'took ' + took + ' (first to last recorded step)')
         if full and item['intent']:
             print(indent + clip(item['intent'], 96))
 

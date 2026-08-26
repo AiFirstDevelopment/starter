@@ -338,6 +338,13 @@ while (pass < MAX_JUDGE_PASSES) {
 
   verdict = await agent(
     'Adjudicate this change as the quorum judge.\n\n' +
+      'First, before reading anything, record that the panel is done and you have ' +
+      'started:\n```bash\npython3 "$CLAUDE_PLUGIN_ROOT/bin/state.py" docs/work/' + slug +
+      ' \'{"stage":"reviewed","log":"panel complete, adjudication started"}\'\n```\n' +
+      'The scribe is write-only and cannot record anything, and this script has no ' +
+      'shell, so you are the first thing in the run able to say the review finished. ' +
+      'Until you do, /quorum:status cannot tell a panel still running from one that ' +
+      'finished an hour ago. Record it first so it is true even if you fail later.\n\n' +
       'Read the plan at ' + planPath + ', the diff, and every review under docs/work/' + slug +
       '/reviews/. You are the last step before a human sees this work — nobody will catch what ' +
       'you miss, and no one approves your edits before they land.\n\n' +

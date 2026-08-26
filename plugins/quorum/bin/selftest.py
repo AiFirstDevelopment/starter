@@ -592,6 +592,30 @@ def test_history():
         check('the table shows the request column',
               code == 0 and '#42' in out and '!7' in out, out[:300])
 
+        # --- elapsed, from the log's own stamps ----------------------------
+        write(repo, 'docs/work/timed/plan.md',
+              PLAN.replace('# Plan: demo', '# Plan: A timed change'))
+        write(repo, 'docs/work/timed/state.json', json.dumps({
+            'slug': 'timed', 'stage': 'published',
+            'log': ['2026-01-01T09:00:00Z pipeline launched',
+                    '2026-01-01T09:12:00Z panel complete, adjudication started',
+                    '2026-01-01T09:41:00Z published'],
+        }))
+        commit_as('Ada Lovelace', 'ada@example.com', '2022-01-01T09:00:00+00:00',
+                  'plan a timed change')
+
+        code, out, _ = run(['python3', HISTORY, '--json'], cwd=repo)
+        items = dict((i['slug'], i) for i in json.loads(out))
+        check('history measures elapsed from the recorded stamps',
+              items.get('timed', {}).get('elapsed', {}).get('seconds') == 41 * 60,
+              'got %r' % items.get('timed', {}).get('elapsed'))
+        check('history reports no duration when nothing was recorded',
+              items.get('older', {}).get('elapsed', {}).get('seconds') is None,
+              'got %r' % items.get('older', {}).get('elapsed'))
+
+        code, out, _ = run(['python3', HISTORY], cwd=repo)
+        check('the table shows how long it took', 'took 41m' in out, out[:400])
+
         code, out, _ = run(['python3', HISTORY, '--author', 'ada'], cwd=repo)
         check('history filters by author',
               code == 0 and 'An earlier change' in out and 'Plan: demo' not in out

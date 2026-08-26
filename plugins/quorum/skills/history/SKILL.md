@@ -61,6 +61,16 @@ Worth being precise, because two of them are easy to misread:
   in `(#12)` matches, and that might be a later fix rather than the change itself.
   Treat a recorded URL as fact and an inferred number as a lead.
 
+- **took** is wall-clock between the first and last event `state.json` recorded,
+  and only appears once a run has recorded at least two. It is a duration that
+  happened, **never an estimate of the next one**. It includes any time the item
+  sat waiting for a human, because that is also time the change took.
+
+  It comes from the log's own stamps because there is nowhere else honest to get
+  it: the workflow script cannot read a clock at all — `Date.now()` throws there
+  by design, so a resumed run replays identically — and file mtimes are rewritten
+  by a checkout.
+
 - **STAGE** prefers `state.json`'s stage and falls back to the plan's *Status*.
   Work items planned before the state recorder existed have only the latter, so
   both are read rather than assuming the newer one is there.

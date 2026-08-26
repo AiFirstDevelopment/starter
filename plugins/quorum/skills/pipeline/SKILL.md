@@ -183,6 +183,16 @@ Do not re-implement the orchestration by hand and do not spawn the agents
 yourself — the script exists so the sequence is identical every run and so a
 failed run can be resumed rather than re-paid for.
 
+As it runs, each review lens announces itself as it lands — clean, or its finding
+and blocker counts — with how many of the six are done. **There is no estimated
+time to completion and there will not be one from inside the run:** the workflow
+script cannot read a clock, by design, so any figure it printed would be invented.
+What it reports instead is work remaining, which it actually knows.
+
+For a real number, `/quorum:history` shows how long previous items on this repo
+took, measured from their own recorded timestamps. Quote those if the user wants
+an expectation — a duration that happened beats a prediction that did not.
+
 The workflow runs in the background and reports when it completes. It returns a
 summary object; `verdict.md` on disk is the authoritative record.
 
