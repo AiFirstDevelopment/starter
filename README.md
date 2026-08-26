@@ -362,6 +362,19 @@ question the judge will have to escalate, and an escalation costs a whole extra
 cycle — the run finishes, you decide, code lands, and that code then needs its own
 review round.
 
+**Diagrams where they earn their place.** A mermaid diagram goes in the plan when
+it shows something the prose would otherwise ask the reader to hold in their head
+— a `flowchart` for branching control flow and its failure paths, a
+`sequenceDiagram` when components talk across a boundary, a `stateDiagram-v2` for
+a lifecycle and which transitions are deliberately illegal, an `erDiagram` when
+relationships or cardinality change. They render on GitHub with no tooling.
+
+They are held to the same standard as the prose: the diagram supplements the
+acceptance criteria and never replaces them, every AC must still be checkable from
+its text alone, edges are labelled, and if the diagram and the prose disagree the
+plan is wrong somewhere and both get fixed. A three-line change gets no diagram —
+drawing one to look thorough is its own failure.
+
 **The plan holds two kinds of statement, and they are not equal.** *Intent*,
 *Acceptance criteria*, and *Non-goals* are **requirements** — authoritative, and
 nobody but you may edit them. Everything in *Approach*, diagrams included, is a
@@ -697,7 +710,9 @@ quorum — a delivery pipeline:
                    fresh one off the base when the current branch already carries a
                    finished change — then investigate the request and write
                    docs/work/<slug>/plan.md capturing Intent, falsifiable Acceptance
-                   criteria, Non-goals, and Open questions. Writes no code.
+                   criteria, Non-goals, and Open questions — plus a mermaid
+                   diagram wherever one carries the design better than a
+                   paragraph. Writes no code.
                    Run bare, with no description, it instead shows me the plan
                    already on disk, asks whether I approve it, and offers to start
                    the pipeline.

@@ -1,7 +1,7 @@
 {
   "name": "quorum",
   "description": "Plan, build, multi-lens review, and adjudication - run step by step or autonomously from an approved plan, ending in a pull request.",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "author": {
     "name": "Joel Stevick"
   },
