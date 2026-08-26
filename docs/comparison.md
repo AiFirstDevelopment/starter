@@ -2,10 +2,12 @@
 
 Quorum makes an AI write down what it's going to build — in terms you can actually
 check — before it writes any code, then holds it to that plan mechanically instead
-of asking nicely. All you do is approve the plan and read the pull request, both
-things you already know how to do: you never have to supervise an agent or decide
-when to trust one, which is the part most developers don't understand and are
-right to be wary of.
+of asking nicely. There's no new tool to learn and no dashboard to log into: it's
+slash commands in the editor you already use, and every plan, review, and verdict
+is a markdown file in your own repository. All you do is approve the plan and read
+the pull request, both things you already know how to do — you never have to
+supervise an agent or decide when to trust one, which is the part most developers
+don't understand and are right to be wary of.
 
 That is the claim. What follows is an honest look at where this pipeline actually
 sits against the tools it overlaps with, and where it is still weaker than its own
