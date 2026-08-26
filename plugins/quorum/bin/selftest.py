@@ -581,6 +581,16 @@ def test_frontmatter():
                 keys.append(match.group(1))
         check('%s:%s declares name and description' % (plugin, entry),
               'name' in keys and 'description' in keys, 'has %s' % keys)
+        # The code-writing steps must guard on Status rather than on a flag.
+        # Removing disable-model-invocation without that guard would let a
+        # spontaneous invocation start building an unapproved plan, which is
+        # exactly what the flag used to prevent by accident.
+        if entry in ('2-build', '4-quorum'):
+            body = open(path).read()
+            check('%s:%s guards on the plan being authorized' % (plugin, entry),
+                  'planned' in body and 'Status' in body,
+                  'no Status check found in the procedure')
+
         unknown = [k for k in keys if k not in supported]
         check('%s:%s uses only supported frontmatter keys' % (plugin, entry),
               not unknown, 'unrecognised (silently ignored): %s' % unknown)

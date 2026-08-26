@@ -2,7 +2,6 @@
 name: 4-quorum
 description: Step 4 of the quorum pipeline. Acts as judge over the plan, the code, and all reviews - adjudicating each finding, applying accepted fixes, and writing a verdict to docs/work/<slug>/verdict.md. Ends only with a green test suite.
 argument-hint: [slug]
-disable-model-invocation: true
 ---
 
 # Step 4 — Quorum
@@ -23,6 +22,14 @@ Read `${CLAUDE_PLUGIN_ROOT}/reference/contract.md` for layout and diff rules.
 If any review lens is missing, note it — an unexamined dimension is itself a risk.
 
 ## Procedure
+
+0. **Check the plan is authorized before applying any fix.** If its *Status* is
+   still `planned`, stop and ask: show *Intent*, *Acceptance criteria*, and
+   *Non-goals* and confirm the user wants this adjudicated. You apply fixes to the
+   working tree, so this is code-writing, and reaching this step tells you nothing
+   about whether a human decided the work should happen — only *Status* does.
+   Anything from `approved` onward, proceed.
+
 
 1. **Read everything before deciding anything.** Reviews often disagree, and one
    lens's "unnecessary complexity" is another's "required error handling."

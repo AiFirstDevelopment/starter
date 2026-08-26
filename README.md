@@ -145,12 +145,17 @@ same steps are also available individually — `/quorum:2-build`,
 `/quorum:status` reads the artifacts on disk and tells you which one you are due
 to run next.
 
-`/quorum:pipeline` and steps 1–4 are **user-invoked only**
-(`disable-model-invocation: true`). Claude will not spontaneously decide it is
-time to run the judge, and it certainly will not launch a nine-agent unattended
-run on its own. `/quorum:status` is model-invocable — it only reads — as are the
-`tests` skills, so Claude can reach for them when it recognizes the need,
-including from inside the pipeline.
+**Every skill here is model-invocable**, so asking Claude to start the pipeline
+works rather than being refused. What guards the dangerous part is not who typed
+the command but whether the work was authorized, which is a better question: the
+approval gate is inside `/quorum:pipeline`, and `2-build` and `4-quorum` — the two
+steps that write code — stop and ask when the plan's *Status* is still `planned`.
+
+That is a deliberate change from an earlier design where these were
+`disable-model-invocation: true`. The flag did prevent a spontaneous unattended
+run, but it also blocked "start the pipeline" from working when you asked for it,
+and it protected nothing the approval gate does not. Authorization is a property
+of the plan; typing is a property of the moment.
 
 ## The artifact contract
 
@@ -902,7 +907,9 @@ Adding a skill means creating `plugins/<plugin>/skills/<name>/SKILL.md` with a
 `description` in its frontmatter — that description is how Claude decides when the
 skill is relevant, so it should say *when to use it*, not just what it does. Add
 `disable-model-invocation: true` for anything that should only ever run when you
-type it. No manifest edit is needed; skills are discovered from the directory.
+type it — but prefer guarding on state the skill can check, as `2-build` does with
+*Status*. A flag stops the model and tells you nothing about whether the work was
+authorized. No manifest edit is needed; skills are discovered from the directory.
 
 Adding a **plugin** means a new `plugins/<name>/` with its own
 `.claude-plugin/plugin.json`, plus an entry in the marketplace `plugins[]` array.

@@ -2,7 +2,6 @@
 name: 2-build
 description: Step 2 of the quorum pipeline. Implements the plan at docs/work/<slug>/plan.md, ticking off steps as it goes and recording any deviation from the plan.
 argument-hint: [slug]
-disable-model-invocation: true
 ---
 
 # Step 2 — Build
@@ -17,18 +16,32 @@ Read `${CLAUDE_PLUGIN_ROOT}/reference/contract.md` for slug and layout rules.
    not exist, stop and tell the user to run `/quorum:1-plan` first. Do not
    improvise a plan.
 
-2. **Resolve open questions.** If the plan has unanswered *Open questions* whose
+2. **Check the plan is authorized before writing anything.** Read its *Status*.
+
+   - `approved` or later — proceed.
+   - `planned` — **stop and ask.** Show *Intent*, *Acceptance criteria*, and
+     *Non-goals*, and confirm the user wants this built. Say plainly that the plan
+     has not been approved.
+
+   This guards authorization, not who typed the command. Anyone can reach this
+   step — you may have been asked directly, or reached for it yourself because it
+   looked like the obvious next move. Neither tells you a human decided this work
+   should happen; only *Status* does. If the user just asked you to build, the
+   question costs them one word and they answer it. If nobody asked, it is the
+   whole point.
+
+3. **Resolve open questions.** If the plan has unanswered *Open questions* whose
    answers would change what you build, ask now rather than after the code exists.
 
-3. **Work step by step.** After completing each step in the *Steps* list, tick its
+4. **Work step by step.** After completing each step in the *Steps* list, tick its
    checkbox in `plan.md`. This is what makes an interrupted session resumable —
    a later session reads the plan and knows exactly where work stopped.
 
-4. **Match the surrounding code.** Follow the naming, structure, error handling,
+5. **Match the surrounding code.** Follow the naming, structure, error handling,
    and comment density already in the repo. New code should be indistinguishable
    in style from the code next to it.
 
-5. **Record deviations as they happen.** Any time reality differs from the plan,
+6. **Record deviations as they happen.** Any time reality differs from the plan,
    append to the *Build notes* section of `plan.md`:
 
    ```markdown
@@ -38,14 +51,14 @@ Read `${CLAUDE_PLUGIN_ROOT}/reference/contract.md` for slug and layout rules.
 
    Step 4 reads these. An unrecorded deviation reads as a defect later.
 
-6. **Stop when the plan is done.** Do not add unrequested features, do not fix
+7. **Stop when the plan is done.** Do not add unrequested features, do not fix
    unrelated issues you notice, do not refactor adjacent code. Note them for the
    user instead.
 
-7. **Run whatever tests exist** (`/tests:run`, or the repo's own command if the
+8. **Run whatever tests exist** (`/tests:run`, or the repo's own command if the
    `tests` plugin is not enabled) and report the result honestly. Do not report the build complete with failing tests.
 
-8. **Update *Status*** in `plan.md` to `built` and record the state per the
+9. **Update *Status*** in `plan.md` to `built` and record the state per the
    contract. If you committed, take `head` afterwards so it names the tree you
    actually built:
 
@@ -60,7 +73,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/reference/contract.md` for slug and layout rules.
    needs to know, and a suite recorded green over failing tests is the one lie
    that makes every later report worthless.
 
-9. **Report**: what was built, which steps are ticked, what deviated, test
+10. **Report**: what was built, which steps are ticked, what deviated, test
    results, and anything you deliberately left out.
 
 ## When the plan is wrong

@@ -2,7 +2,6 @@
 name: 1-plan
 description: Step 1 of the quorum pipeline. Settles the work branch with the user - naming it, or starting a fresh one off the base when the current branch already carries a finished change - then investigates the request and writes intent, acceptance criteria, and non-goals to docs/work/<slug>/plan.md, with a mermaid diagram wherever one carries the design better than a paragraph. Writes no code.
 argument-hint: [what to build - omit to approve the existing plan]
-disable-model-invocation: true
 ---
 
 # Step 1 — Plan
