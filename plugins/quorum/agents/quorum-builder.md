@@ -37,5 +37,15 @@ Commit your work on the current branch with a message describing the change, not
 the process. Do not push and do not open a pull request — the pipeline publishes
 at the end.
 
-Set *Status* in `plan.md` to `built`. Return a summary: what you built, which
-steps are ticked, what deviated, and anything you deliberately left out.
+Set *Status* in `plan.md` to `built`, then record the state per the contract's
+`state.json` section — stage `built`, steps done, deviations, suite result, and
+`head` taken **after** your commit so it names the tree you actually built. Use
+the helper the contract names; if it is not reachable, write the same shape by
+hand rather than skipping the record.
+
+Record the suite result honestly, `red` included. The judge and `/quorum:status`
+both read it, and a suite recorded green over failing tests makes every later
+report worthless.
+
+Return a summary: what you built, which steps are ticked, what deviated, and
+anything you deliberately left out.

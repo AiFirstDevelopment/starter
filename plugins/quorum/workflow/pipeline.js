@@ -3,9 +3,10 @@ export const meta = {
   description: 'Autonomous build, multi-lens review, and adjudication for an approved quorum plan',
   phases: [
     { title: 'Build', detail: 'implement the approved plan' },
-    { title: 'Review', detail: 'five independent lenses in parallel, read-only' },
+    { title: 'Review', detail: 'six independent lenses in parallel, read-only' },
     { title: 'Record', detail: 'transcribe findings to docs/work/<slug>/reviews/' },
     { title: 'Adjudicate', detail: 'judge the panel, apply fixes, end green or blocked' },
+    { title: 'Recheck', detail: "one read-only pass over the judge's own commits" },
     { title: 'Publish', detail: 'push the branch and open or update the PR/MR' },
   ],
 }
@@ -16,7 +17,13 @@ if (!slug) throw new Error('pipeline requires args.slug')
 const planPath = 'docs/work/' + slug + '/plan.md'
 const skipBuild = !!(args && args.skipBuild)
 const skipPublish = !!(args && args.skipPublish)
+const skipRecheck = !!(args && args.skipRecheck)
 const MAX_JUDGE_PASSES = 2
+
+// Resolved once by /quorum:pipeline, which has a shell; this script does not.
+// Handing every lens the same range is what makes "they all reviewed the same
+// change" a fact rather than a hope.
+const diffRange = (args && args.diffRange) || ''
 
 const FINDINGS_SCHEMA = {
   type: 'object',
@@ -90,6 +97,18 @@ const PUBLISH_SCHEMA = {
 
 const LENSES = [
   {
+    key: 'behavior',
+    remit:
+      'Launch the assembled application and operate it as a user would. This lens does not ' +
+      'read the diff: it reports what the software actually does. Walk each acceptance ' +
+      'criterion by driving the real artifact — the built app, the running server, the ' +
+      'installed CLI, never a test harness — and then go off-script and exercise the ' +
+      'controls and paths the change did not touch, to catch what it broke in passing. ' +
+      'Report observed behavior: the steps you took, what you expected, what happened. If ' +
+      'the project has no runnable surface, return clean with a note saying so rather than ' +
+      'falling back to reading code, which other lenses already cover.',
+  },
+  {
     key: 'correctness',
     remit:
       'Logic errors, unhandled cases, off-by-one, null/undefined, race conditions, ' +
@@ -100,7 +119,9 @@ const LENSES = [
     remit:
       'Compare the diff against the plan. Is every acceptance criterion actually met? ' +
       'Was anything listed under Non-goals built anyway? Do the deviations recorded in ' +
-      'Build notes hold up, and is there any PLAN DEFECT note that must be escalated?',
+      'Build notes hold up, and is there any PLAN DEFECT note that must be escalated? ' +
+      'Also verify each numbered claim under Approach against the repository — those are ' +
+      'assertions the planner believed, not facts, and a false one is a finding.',
   },
   {
     key: 'security',
@@ -137,8 +158,9 @@ if (!skipBuild) {
       'You are running unattended. If the plan turns out to be wrong, do the most defensible ' +
       'thing and record it under a "PLAN DEFECT" heading in Build notes — do not silently ' +
       'redesign around it.\n\n' +
-      'When done, set Status in the plan to "built" and summarize what you built, what ' +
-      'deviated, and what you left out.',
+      'When done, set Status in the plan to "built", record the state per the contract ' +
+      '(stage "built", steps done, deviations, suite result, and head taken after your ' +
+      'commit), and summarize what you built, what deviated, and what you left out.',
     { label: 'build', phase: 'Build', agentType: 'quorum-builder' }
   )
   log(built ? 'Build complete.' : 'Build agent returned nothing — reviewing the tree as it stands.')
@@ -158,10 +180,14 @@ const reviews = (
         return agent(
           'Review the current change through the "' + lens.key + '" lens ONLY.\n\n' +
             'Your remit: ' + lens.remit + '\n\n' +
-            'The plan, including its acceptance criteria and non-goals, is at ' + planPath + '. ' +
-            'Read it, then determine the diff: the changes between this branch and the base ' +
-            'branch it merges into, plus any uncommitted working-tree changes. Report the range ' +
-            'you used in diffRange.\n\n' +
+            'The plan, including its acceptance criteria and non-goals, is at ' + planPath + '.\n\n' +
+            (diffRange
+              ? 'The change under review is ' + diffRange + ', plus any uncommitted ' +
+                'working-tree changes. This range was resolved once for the whole panel — use ' +
+                'it as given, do not derive your own, and echo it back in diffRange.\n\n'
+              : 'No range was supplied. Determine the diff yourself: the changes between this ' +
+                'branch and the base branch it merges into, plus any uncommitted working-tree ' +
+                'changes. Report the range you used in diffRange.\n\n') +
             'Read the diff as work you have never seen. Verify every claim against the code — ' +
             'never accept an explanation of why the code is the way it is as evidence that it ' +
             'is right.\n\n' +
@@ -216,6 +242,27 @@ await agent(
 
 phase('Adjudicate')
 
+// The scribe is write-only and cannot record state, so the judge records the
+// review round on its behalf. Compute the tally here, once, from the workflow's
+// own view of what ran — it is the only place that knows which lenses came back.
+const lensTally = LENSES.map(function (l) {
+  const r = reviews.filter(function (x) { return x.lens === l.key })[0]
+  const fs = r ? r.findings || [] : []
+  return {
+    lens: l.key,
+    ran: !!r,
+    findings: fs.length,
+    blockers: fs.filter(function (f) { return f.severity === 'blocker' }).length,
+  }
+})
+
+const reviewRecord = {
+  lenses: reviews.map(function (r) { return r.lens }),
+  missing: missing,
+  findings: allFindings.length,
+  blockers: blockers,
+}
+
 let verdict = null
 let pass = 0
 
@@ -246,6 +293,12 @@ while (pass < MAX_JUDGE_PASSES) {
       'Finish by running the full regression suite. Then write docs/work/' + slug +
       '/verdict.md and set Status in the plan to "adjudicated". Lead the verdict with whatever ' +
       'is unmet, escalated, or failing — the human is scanning for what needs them.\n\n' +
+      'Then record the state per the contract, taking head AFTER your commit lands. Record ' +
+      'the review round on the scribe\'s behalf as well as your own verdict — the scribe is ' +
+      'write-only and cannot record anything. Set review.round to one more than the highest ' +
+      'round already in state.json, or 1 if there is none, and set review.head to the commit ' +
+      'the lenses read, which is HEAD as it stood before your own fixes:\n```json\n' +
+      JSON.stringify(reviewRecord, null, 2) + '\n```\n\n' +
       'Any escalation or unmet criterion means the outcome is "ready with follow-ups" or ' +
       '"blocked", never "ready".' +
       retry,
@@ -263,6 +316,69 @@ if (!verdict.suiteGreen) {
   log('Regression suite still red after ' + pass + ' judging passes. Reported, not worked around.')
 }
 
+// ---------------------------------------------------------------- recheck
+
+// Nothing reviews the judge. It applies fixes and commits them after all six
+// lenses have already read the tree, so its own diff ships with zero coverage —
+// and a judge vouching for its own edits is the exact self-assessment this
+// pipeline exists to distrust.
+//
+// One read-only pass closes that hole without opening a regress: these findings
+// are recorded and can force the PR to a draft, but nothing fixes them here. A
+// fix would need its own review, and so on without end. Real findings against the
+// judge's diff are for the human at PR time.
+
+let recheck = null
+
+if (skipRecheck) {
+  log('Skipping recheck (skipRecheck set).')
+} else {
+  phase('Recheck')
+
+  recheck = await agent(
+    'Review ONLY the commits the judge made while adjudicating this change. Everything ' +
+      'else on this branch has already been reviewed by six lenses; the judge\'s own edits ' +
+      'have been reviewed by nobody.\n\n' +
+      'Read docs/work/' + slug + '/state.json. The range you are reviewing is ' +
+      'review.head..verdict.head — the commits that landed after the lenses read the tree. ' +
+      'If those fields are missing, fall back to the commits touching this branch since the ' +
+      'newest file in docs/work/' + slug + '/reviews/, and say so in notes. If the range is ' +
+      'empty the judge accepted nothing; return verdict "clean".\n\n' +
+      'The judge was fixing findings under time pressure, at the end of a long run, with no ' +
+      'reviewer waiting. Look for what that produces: a fix that suppresses a symptom rather ' +
+      'than its cause, a guard added in one call path and not its twin, a test adjusted to ' +
+      'accommodate the fix, collateral damage to code the fix passed through.\n\n' +
+      'The plan is at ' + planPath + '. Judge the code, not the verdict\'s account of it. ' +
+      'Use lens "judge-diff". Report only what you can defend with a file, a line, and a ' +
+      'concrete failure scenario — a blocker here turns the pull request into a draft.',
+    { label: 'recheck:judge-diff', phase: 'Recheck', agentType: 'quorum-reviewer', schema: FINDINGS_SCHEMA }
+  )
+
+  if (recheck && (recheck.findings || []).length) {
+    await agent(
+      'Transcribe these findings verbatim into docs/work/' + slug + '/reviews/, as a single ' +
+        'file NNN-judge-diff.md continuing the existing numbering. Preserve every finding ' +
+        'exactly as given. Note in the file that this review covers the judge\'s own ' +
+        'adjudication commits, which no other lens saw.\n\n' +
+        'Findings JSON:\n```json\n' + JSON.stringify([recheck], null, 2) + '\n```',
+      { label: 'record-recheck', phase: 'Recheck', agentType: 'quorum-scribe' }
+    )
+  }
+}
+
+const recheckFindings = recheck ? recheck.findings || [] : []
+const recheckBlockers = recheckFindings.filter(function (f) {
+  return f.severity === 'blocker'
+}).length
+
+if (recheckBlockers) {
+  log('RECHECK — ' + recheckBlockers + " blocker(s) in the judge's own diff; publishing as draft.")
+} else if (recheckFindings.length) {
+  log('Recheck: ' + recheckFindings.length + " finding(s) in the judge's diff, none blocking.")
+} else if (recheck) {
+  log("Recheck: the judge's own diff is clean.")
+}
+
 // ---------------------------------------------------------------- publish
 
 let published = null
@@ -271,17 +387,6 @@ if (skipPublish) {
   log('Skipping publish (skipPublish set).')
 } else {
   phase('Publish')
-
-  const lensTally = LENSES.map(function (l) {
-    const r = reviews.filter(function (x) { return x.lens === l.key })[0]
-    const fs = r ? r.findings || [] : []
-    return {
-      lens: l.key,
-      ran: !!r,
-      findings: fs.length,
-      blockers: fs.filter(function (f) { return f.severity === 'blocker' }).length,
-    }
-  })
 
   published = await agent(
     'Publish this branch for human review.\n\n' +
@@ -306,15 +411,28 @@ if (skipPublish) {
           summary: verdict.summary,
           lenses: lensTally,
           lensesMissing: missing,
+          judgeDiffReview: recheck
+            ? { findings: recheckFindings.length, blockers: recheckBlockers }
+            : 'not run',
         },
         null,
         2
       ) +
       '\n```\n\n' +
-      (verdict.suiteGreen && verdict.outcome !== 'blocked'
+      (verdict.suiteGreen && verdict.outcome !== 'blocked' && !recheckBlockers
         ? 'Open it ready for review.'
-        : 'Open it as a DRAFT: the verdict is not clean. Lead the body with what is failing ' +
-          'or unresolved, and prefix the title with "[blocked]" if the outcome is blocked.') +
+        : recheckBlockers && verdict.suiteGreen && verdict.outcome !== 'blocked'
+          ? 'Open it as a DRAFT. The verdict itself is clean, but a review of the judge\'s ' +
+            'own adjudication commits found ' + recheckBlockers + ' blocker(s) — code that ' +
+            'nothing else reviewed. Lead the body with those, name the review file under ' +
+            'docs/work/' + slug + '/reviews/, and say plainly that they are unfixed because ' +
+            'the pipeline does not let the judge grade its own repairs.'
+          : 'Open it as a DRAFT: the verdict is not clean. Lead the body with what is failing ' +
+            'or unresolved, and prefix the title with "[blocked]" if the outcome is blocked.') +
+      '\n\nWhen the PR is open, record the state per the contract: stage "published", a pr ' +
+      'object with the URL and draft flag, and a recheck object with the judge-diff findings ' +
+      'and blockers from the summary above. If you could not publish, record no pr and say ' +
+      'why in the log line.' +
       '\n\nNever merge, approve, or enable auto-merge. Never force-push. If the host is ' +
       'unsupported or its CLI is unavailable, do not fail — print the title, body, and command ' +
       'you would have used and report that a human must publish.',
@@ -344,6 +462,10 @@ return {
   followUps: verdict.followUps,
   summary: verdict.summary,
   judgePasses: pass,
+  diffRange: diffRange || 'derived per lens',
+  judgeDiffFindings: recheckFindings.length,
+  judgeDiffBlockers: recheckBlockers,
+  judgeDiffReviewed: !!recheck,
   verdictPath: 'docs/work/' + slug + '/verdict.md',
   published: published ? !!published.published : false,
   prUrl: published ? published.url : undefined,

@@ -1,14 +1,14 @@
 ---
 name: pipeline
-description: Runs the whole quorum pipeline autonomously from an approved plan - build, five independent review lenses in parallel, then adjudication - stopping only for plan approval at the start. Use when the plan is written and you want the change delivered without further supervision.
+description: Runs the whole quorum pipeline autonomously from an approved plan - build, six independent review lenses in parallel, adjudication, then a read-only recheck of the judge's own commits - stopping only for plan approval at the start. Use when the plan is written and you want the change delivered without further supervision.
 disable-model-invocation: true
 ---
 
 # Run the pipeline
 
 Take an approved plan and deliver the change without further human involvement:
-**build → five independent review lenses in parallel → adjudicate → green suite or
-an honest red one.**
+**build → six independent review lenses in parallel → adjudicate → recheck the
+judge's own commits → green suite or an honest red one.**
 
 Plan approval is the only gate. After it, nobody is watching until QA reads
 `verdict.md`.
@@ -70,17 +70,49 @@ review it, and apply fixes to the working tree with no further checkpoint.
 If any *Open question* is unanswered, surface it now. After this point there is
 nobody to ask, and the builder will have to guess and record the guess.
 
-On approval, set *Status* to `approved` in `plan.md`, then continue. On anything
-short of clear approval, stop.
+On approval, set *Status* to `approved` in `plan.md`, record it, then continue:
 
-## Step 3 — Run it
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/bin/state.py" docs/work/<slug> \
+  '{"stage":"approved","log":"pipeline approved by user, starting unattended run"}'
+```
+
+That line is the audit trail for the one human decision in the whole run. On
+anything short of clear approval, stop.
+
+## Step 3 — Determine the diff, once
+
+**Resolve the range here and pass it down.** The workflow script cannot run git —
+it has no shell — so if you do not supply a range, every lens works one out
+independently. Six agents then repeat the same archaeology and each self-reports a
+range that nothing cross-checks, which quietly allows two lenses to review two
+different things.
+
+Compute it per the contract:
+
+```bash
+BASE=$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null | sed 's@.*/@@')
+BASE=${BASE:-main}
+git merge-base HEAD "origin/$BASE" 2>/dev/null   # the fork point, if there is one
+```
+
+Pass `<fork-point>...HEAD`. If there is no remote, no base branch, or no fork
+point — a fresh repo, a branch off nothing — say which, and pass the widest range
+that is actually true, down to the root commit. **An honest wide range beats a
+confident wrong one**, and stating it once means all six lenses are demonstrably
+looking at the same change.
+
+Uncommitted working-tree changes are reviewed too; the range names the committed
+part.
+
+## Step 4 — Run it
 
 Call the **Workflow** tool:
 
 ```
 Workflow({
   scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflow/pipeline.js",
-  args: { slug: "<slug>" }
+  args: { slug: "<slug>", diffRange: "<fork-point>...HEAD" }
 })
 ```
 
@@ -94,7 +126,31 @@ failed run can be resumed rather than re-paid for.
 The workflow runs in the background and reports when it completes. It returns a
 summary object; `verdict.md` on disk is the authoritative record.
 
-## Step 4 — Report
+## Covering an escalation after the fact
+
+The one loop this pipeline cannot close by itself. It escalates a decision, the
+run finishes, a human makes that decision and writes the code — and that new code
+has never been reviewed by anything.
+
+There is **no new approval gate for this**; the plan was approved once and this is
+the same work item. Run the pipeline over just the delta:
+
+```
+Workflow({
+  scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflow/pipeline.js",
+  args: { slug: "<slug>", skipBuild: true, diffRange: "<verdict.head>...HEAD" }
+})
+```
+
+`verdict.head` is in `docs/work/<slug>/state.json` — it is the commit the judge
+last saw, so that range is exactly the uncovered work and nothing else. Reviews
+append a new round, and the judge adjudicates only what is new.
+
+Do **not** re-run the whole branch through build, six lenses, and adjudication to
+cover a small follow-up commit. It re-pays for the entire run to look at a diff
+one round covers.
+
+## Step 5 — Report
 
 Lead with whatever needs a human. In order:
 
@@ -103,8 +159,12 @@ Lead with whatever needs a human. In order:
 2. `escalations` — decisions the judge could not make alone.
 3. `unmetCriteria` — acceptance criteria not satisfied.
 4. `lensesMissing` — a lens that failed to run is an unexamined dimension, not a
-   clean bill of health. Say which one and that its risk is uncovered.
-5. Then the ordinary summary: outcome, findings, accepted vs rejected, follow-ups,
+   clean bill of health. Say which one and that its risk is uncovered. `behavior`
+   missing means nobody ran the software.
+5. `judgeDiffBlockers` — blockers found in the judge's own adjudication commits.
+   These are deliberately left unfixed: the pipeline will not let the judge grade
+   its own repairs. Name them and say they need a human.
+6. Then the ordinary summary: outcome, findings, accepted vs rejected, follow-ups,
    and the path to `verdict.md`.
 
 If `outcome` is `ready` **and** there are escalations or unmet criteria, that is a

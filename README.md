@@ -25,8 +25,13 @@ Every design decision here is aimed at breaking that loop:
   something to measure the result against later.
 - **Review runs in fresh context, from the diff**, so the reviewer is not anchored
   by the reasoning that produced the code.
-- **Review is a panel, not an opinion** — five independent lenses, each blind to
+- **Review is a panel, not an opinion** — six independent lenses, each blind to
   the others' conclusions.
+- **One lens operates the software** instead of reading it. The defects a user
+  hits first are often invisible in a diff, and five static readers can all pass
+  while the app is visibly broken.
+- **Nothing grades its own work** — not the builder, and not the judge, whose
+  repair commits get their own read-only pass.
 - **A judge adjudicates the panel** and is explicitly forbidden from the easy
   outs: weakening a test, narrowing the acceptance criteria, or declaring a
   criterion met when it isn't.
@@ -145,6 +150,7 @@ rather than re-improvised by each skill:
 ```
 docs/work/<slug>/
 ├── plan.md              # 1-plan writes it; 2-build ticks its checkboxes
+├── state.json           # terse index of what has run; every step appends
 ├── reviews/
 │   ├── 001-correctness.md
 │   ├── 002-spec-fidelity.md
@@ -162,6 +168,12 @@ planned and why.
 you read at QA time; `verdict.md` is what you open when the PR raises a question
 and you want the reasoning behind it.
 
+`state.json` is the one exception in kind: it holds no prose and decides nothing.
+It is a terse index of **what has run** — stages, counts, outcomes, and the commit
+SHA each stage actually inspected — written as each step finishes. The artifacts
+say what was decided; they cannot say what has happened since. Both matter, and
+the artifacts stay authoritative wherever the two disagree.
+
 ## `/quorum:pipeline` — the autonomous run
 
 Takes an approved plan and delivers the change with no further human involvement.
@@ -171,19 +183,27 @@ It runs a deterministic [workflow script](plugins/quorum/workflow/pipeline.js)
 rather than improvising the orchestration, so the sequence is identical every run
 and a failed run resumes instead of being re-paid for:
 
+0. **Resolve the diff** — `/quorum:pipeline` computes the range once, in the
+   shell, and hands the same one to every lens. The script has no shell; without
+   this, six agents each redo the archaeology and each self-report a range nothing
+   cross-checks, which quietly allows two lenses to review two different things.
 1. **Build** — one agent implements the plan and commits.
-2. **Review** — five lens agents run **in parallel, in fresh context**, each
+2. **Review** — six lens agents run **in parallel, in fresh context**, each
    returning schema-validated findings. A genuine barrier: the judge needs all
-   five at once.
+   six at once.
 3. **Record** — a write-only scribe transcribes the findings verbatim to
    `docs/work/<slug>/reviews/`.
 4. **Adjudicate** — the judge verifies findings against the code, fixes the real
    ones, commits separately so the diff shows what adjudication changed, and runs
    the suite. At most **two passes**, then it stops.
-5. **Publish** — pushes the branch and opens the pull request, or updates the
+5. **Recheck** — one read-only pass over **the judge's own commits**, the only
+   code on the branch no lens saw. Findings are recorded and can force the PR to a
+   draft; nothing fixes them here, because a fix would need its own review and the
+   regress never terminates.
+6. **Publish** — pushes the branch and opens the pull request, or updates the
    existing one.
 
-Nine agents per run.
+Up to thirteen agents per run.
 
 ### The pull request is the deliverable
 
@@ -262,7 +282,19 @@ refactored cleanly" is not a criterion; "when a user submits the form with an
 empty email, the form stays open and shows 'Email is required'" is.
 
 Ambiguity that would change the shape of the work becomes an **Open question** put
-to you, not a silent assumption.
+to you, not a silent assumption. Leaving one unanswered is expensive: it is the
+question the judge will have to escalate, and an escalation costs a whole extra
+cycle — the run finishes, you decide, code lands, and that code then needs its own
+review round.
+
+**The plan holds two kinds of statement, and they are not equal.** *Intent*,
+*Acceptance criteria*, and *Non-goals* are **requirements** — authoritative, and
+nobody but you may edit them. Everything in *Approach*, diagrams included, is a
+**claim**: an assertion about the repository that the planner believed while
+writing, like "`UserRepo` already exposes `findByEmail`". Claims can be false, and
+a false one misdirects the builder. So they are numbered, and verifying them is
+the spec-fidelity lens's defined job rather than something a reviewer might get to
+on initiative.
 
 ### `/quorum:2-build`
 
@@ -283,8 +315,9 @@ typo — because a reviewer who edits contaminates the evidence step 4 weighs.
 
 | Lens | Remit |
 |---|---|
+| `behavior` | **Launches the app and drives it as a user.** Walks each criterion by operating the real artifact, then goes off-script to catch what the change broke in passing |
 | `correctness` | Logic errors, unhandled cases, races, error handling |
-| `spec-fidelity` | Every acceptance criterion actually met? Anything from Non-goals built anyway? |
+| `spec-fidelity` | Every acceptance criterion actually met? Anything from Non-goals built anyway? Are the plan's numbered claims true? |
 | `security` | Injection, authz gaps, secret handling, data exposure, dependency risk |
 | `simplicity` | Duplication, needless abstraction, dead code, missed reuse |
 | `test-quality` | Do the tests fail if behavior breaks? Assertion-free tests, flakiness risk |
@@ -316,18 +349,28 @@ writes `verdict.md`.
 
 ### `/quorum:status`
 
-Not a step — the answer to "where am I?". Reads the branch, `plan.md`, the
-`reviews/` directory, `verdict.md`, and the working tree, then names the state and
-the **single** next command to run.
+Not a step — the answer to "where am I?". Reads `state.json`, the branch,
+`plan.md`, the `reviews/` directory, `verdict.md`, and the working tree, then
+names the state and the next command to run.
 
-The pipeline keeps state nowhere but the filesystem and the branch. That is what
-makes the artifacts the record, but it also means knowing where you stand requires
-reading four things and knowing what their combinations mean. This does that
-reading.
+Knowing where you stand means reading five things and knowing what their
+combinations mean. This does that reading.
+
+**It leads with what completed, then with what is missing** — in that order,
+always. The failure it exists to prevent is a real one: a branch whose pipeline
+ran, passed, and then took one follow-up commit would get reported as "reviews
+stale — run `/quorum:3-review`". True, and badly misleading. It reads as *the
+pipeline did not do its job*, and it sends you to re-run a finished forty-minute
+pipeline over a five-line diff.
+
+That distinction is exactly what mtimes cannot make, which is why every stage
+records the commit it inspected. "Are the reviews stale?" stops being a guess and
+becomes `git log <review.head>..HEAD` — a precise list of the commits no lens has
+seen, and a diffstat sizing them, so you can make the call yourself.
 
 It **changes nothing**. A status command that repairs what it finds cannot be
 trusted to report honestly, so it reports instead: a plan claiming `built` over
-unticked steps, reviews older than the commits they supposedly cover, a missing
+unticked steps, a `state.json` the artifacts contradict, a missing
 lens (an unexamined dimension, not a clean bill of health), a `blocked` verdict,
 or `ready` sitting beside unresolved escalations — which is a contradiction in the
 judge's own output.
@@ -335,6 +378,22 @@ judge's own output.
 It departs from the artifact contract on one point, deliberately. Where the
 contract says to stop and ask for a slug when the branch is the default branch,
 status reports that as the state it is — naming that case is the whole point.
+
+### Closing an escalation
+
+The one loop the pipeline cannot close alone. It hands back a decision, the run
+ends, you decide and write the code — and that code has been reviewed by nothing.
+
+There is **no second approval gate** for this; the plan was approved once and it
+is the same work item. Re-run the pipeline over just the delta, using the commit
+the judge last saw:
+
+```
+args: { slug, skipBuild: true, diffRange: "<verdict.head>...HEAD" }
+```
+
+`verdict.head` is in `state.json`. Reviews append a new round, the judge
+adjudicates only what is new, and the full branch is not re-paid for.
 
 ---
 
@@ -451,9 +510,10 @@ quorum — a delivery pipeline:
                    and Open questions. Writes no code.
   /quorum:2-build  Implement that plan, ticking off steps and recording deviations.
                    Never edits Intent, Acceptance criteria, or Non-goals.
-  /quorum:3-review Review the diff in fresh context from five independent lenses
-                   (correctness, spec-fidelity, security, simplicity, test-quality),
-                   one file per lens under docs/work/<slug>/reviews/. Fixes nothing.
+  /quorum:3-review Review the diff in fresh context from six independent lenses
+                   (behavior, correctness, spec-fidelity, security, simplicity,
+                   test-quality), one file per lens under docs/work/<slug>/reviews/.
+                   Fixes nothing.
   /quorum:4-quorum Judge the plan, the diff, and all reviews. Accept, reject, or
                    escalate each finding; apply accepted fixes; end with a green
                    suite; write docs/work/<slug>/verdict.md.

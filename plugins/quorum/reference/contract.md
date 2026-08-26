@@ -6,6 +6,7 @@ directory. This is the contract between steps. Do not invent other locations.
 ```
 docs/work/<slug>/
 ├── plan.md              # written by /quorum:1-plan, checkboxes ticked by /quorum:2-build
+├── state.json           # terse index of what has run; every step appends to it
 ├── reviews/
 │   ├── 001-correctness.md
 │   ├── 002-spec-fidelity.md
@@ -31,6 +32,97 @@ In order of precedence:
    stops. See that skill for the naming rules.
 
 Once a step has resolved a slug, later steps in the same session reuse it.
+
+## Pipeline state — `state.json`
+
+The prose artifacts say what was decided. They do not say **what has run**, and
+reconstructing that from file mtimes gives wrong answers: a checkout rewrites
+mtimes, and a commit landing after a finished pipeline is indistinguishable from
+a pipeline that never got that far. Those two are the opposite of each other, so
+guessing between them is worse than not answering.
+
+`state.json` is a terse index of what has run, written as it runs. Keep it small —
+counts, outcomes, and commit SHAs. Never prose, never a copy of the artifacts.
+
+```json
+{
+  "slug": "retry-failed-webhooks",
+  "branch": "feature/retry-failed-webhooks",
+  "stage": "adjudicated",
+  "updated": "2026-08-25T21:14:03Z",
+  "plan":    { "acs": 4, "steps": 6, "open": 1 },
+  "build":   { "stepsDone": 6, "deviations": 2, "suite": "green", "head": "a1b2c3d" },
+  "review":  { "round": 1, "lenses": ["correctness", "spec-fidelity", "security",
+               "simplicity", "test-quality"], "missing": [], "findings": 7,
+               "blockers": 1, "head": "a1b2c3d" },
+  "verdict": { "outcome": "ready with follow-ups", "suite": "green", "accepted": 3,
+               "rejected": 4, "unmet": 0, "escalations": 2, "head": "e4f5g6h" },
+  "recheck": { "findings": 1, "blockers": 0 },
+  "pr":      { "url": "https://github.com/o/r/pull/12", "draft": false },
+  "log": [
+    "2026-08-25T20:40:02Z 2-build built 6/6, 2 deviations, suite green",
+    "2026-08-25T21:14:03Z 4-quorum adjudicated ready with follow-ups, 2 escalations"
+  ]
+}
+```
+
+`stage` is one of `planned`, `approved`, `building`, `built`, `reviewed`,
+`adjudicated`, `published`. Absent sections mean that step has not run.
+
+`recheck` is the read-only pass over the judge's own adjudication commits — the
+one part of the branch no lens saw. Absent means it did not run, which is not the
+same as clean.
+
+### `head` is the load-bearing field
+
+Every stage that inspects code records the commit it inspected, taken **after**
+that stage's own commits land:
+
+```bash
+git rev-parse --short HEAD
+```
+
+That turns "are the reviews stale?" from a guess into a question git answers
+exactly:
+
+```bash
+git log --oneline <review.head>..HEAD    # commits no lens has seen
+git diff --stat <review.head>..HEAD      # and how big they are
+```
+
+An empty result means the reviews cover the tree. A non-empty one names precisely
+what they do not, which is a different and far more useful statement than "stale".
+
+`head` describes committed work only. A stage that ran over a dirty working tree
+inspected more than its `head` names, which is why `/quorum:status` reads
+`git status --porcelain` alongside it.
+
+### Writing to it
+
+Use the helper — it deep-merges your patch, stamps `updated`, appends one log
+line, and caps the log. Record only your own section:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/bin/state.py" docs/work/<slug> \
+  '{"stage":"built","build":{"stepsDone":6,"deviations":2,"suite":"green","head":"a1b2c3d"},
+    "log":"2-build built 6/6, 2 deviations, suite green"}'
+```
+
+If `python3` is unavailable, write the same shape by hand with the Write tool,
+preserving every key you did not set. Do not skip the record because the helper
+did not run.
+
+Rules:
+
+- **Record after the work, not before.** The file says what happened, not what was
+  intended.
+- **Never hand-edit it to change what a step reported.** Re-run the step instead.
+- **It is an index, not the record.** `plan.md`, `reviews/`, and `verdict.md`
+  remain authoritative. When the two disagree, the artifacts win and the
+  disagreement is itself worth reporting.
+- Missing or malformed is not an error — it means the work item predates this
+  file or a write failed. Fall back to reading the artifacts.
+- `/quorum:status` **never writes to it.**
 
 ## Review numbering
 

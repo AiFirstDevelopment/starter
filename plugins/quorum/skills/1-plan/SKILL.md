@@ -80,7 +80,17 @@ This is the only step that may create a branch. Every later step still stops.
    diagram would carry the design better than a paragraph, draw one in mermaid
    — see *Diagrams*.
 
-6. **Stop.** Report the path and summarize the acceptance criteria and any open
+6. **Record the state** per the contract, so `/quorum:status` can report what has
+   run without inferring it:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/bin/state.py" docs/work/<slug> \
+     '{"slug":"<slug>","branch":"<branch>","stage":"planned",
+       "plan":{"acs":4,"steps":6,"open":1},
+       "log":"1-plan planned 4 ACs, 6 steps, 1 open question"}'
+   ```
+
+7. **Stop.** Report the path and summarize the acceptance criteria and any open
    questions. Do not begin building.
 
    The user then either drives the steps by hand (`/quorum:2-build`,
@@ -88,6 +98,23 @@ This is the only step that may create a branch. Every later step still stops.
    executes all of it unattended. **Assume the latter.** Plan approval is the last
    human checkpoint, so anything you leave vague is something a builder will have
    to guess at with nobody to ask.
+
+## Two kinds of statement
+
+A plan contains two things that look alike on the page and are not alike at all:
+
+- **Requirements** — *Intent*, *Acceptance criteria*, *Non-goals*. These are
+  authoritative. They are what the user wants, and every later step is measured
+  against them. Nobody may edit them but the user.
+- **Claims** — everything in *Approach*, including any diagram. These are
+  assertions **about the repository** that you believe while writing the plan:
+  that a function exists, that a pattern is followed, that a change is confined to
+  three files. Any of them can be false.
+
+A false claim in *Approach* misdirects the builder, and it will be caught late or
+not at all unless verifying it is somebody's defined job. So number your claims.
+`/quorum:3-review`'s spec-fidelity lens checks them explicitly, and a claim that
+turns out to be false is a finding rather than a surprise.
 
 ## Template
 
@@ -131,6 +158,11 @@ not blocked. Empty is fine — but only if it is genuinely empty.
 
 - **Q:** ... **Assumption:** ...
 
+Every question you leave unanswered here is one the judge will likely have to
+escalate, and an escalation costs a whole extra cycle: the run finishes, a human
+decides, code lands, and that new code then needs its own review round. Settling
+a question now is far cheaper than escalating it later.
+
 ## Approach
 
 The intended implementation, at the level of files and responsibilities. Name the
@@ -139,6 +171,13 @@ existing patterns being followed. Call out anything risky or irreversible.
 Include a mermaid diagram here when the change has a shape prose describes
 poorly — see *Diagrams* below. Omit the diagram entirely when it would only
 restate the paragraph above it.
+
+**Claims** — the assertions about this repository that the approach rests on, each
+one something that could turn out to be false. The spec-fidelity lens verifies
+these; a false one is a finding, not a discovery.
+
+- [ ] C1: `UserRepo` already exposes `findByEmail`
+- [ ] C2: no other caller depends on the current return shape
 
 ```mermaid
 flowchart LR

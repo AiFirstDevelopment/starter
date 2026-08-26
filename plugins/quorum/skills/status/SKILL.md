@@ -1,22 +1,40 @@
 ---
 name: status
-description: Reports where the current work item stands in the quorum pipeline - what has been planned, built, reviewed, and adjudicated - and names the single next command to run. Read-only; changes nothing.
+description: Reports where the current work item stands in the quorum pipeline - what has run, what it concluded, and what has changed since - and names the next command to run. Read-only; changes nothing.
 ---
 
 # Status — where am I?
 
-Answer two questions and stop: **what state is this work item in**, and **what is
+Answer two questions and stop: **what has run on this work item**, and **what is
 the one command to run next.** Change nothing.
 
-Read `${CLAUDE_PLUGIN_ROOT}/reference/contract.md` for the slug rules and the file
-layout you are inspecting.
+Read `${CLAUDE_PLUGIN_ROOT}/reference/contract.md` for the slug rules, the file
+layout, and the `state.json` schema you are reading.
 
 ## Why this step exists
 
-The pipeline keeps no state anywhere but the filesystem and the branch. That is
-deliberate — the artifacts *are* the record — but it means knowing where you are
-requires reading four things and knowing what their combinations mean. This skill
-does that reading and gives a straight answer.
+Knowing where you stand means reading five things and knowing what their
+combinations mean. This skill does that reading and gives a straight answer.
+
+`state.json` records what has run. The artifacts record what was decided. You need
+both: the artifacts alone cannot distinguish *the pipeline never got that far*
+from *the pipeline finished and then work landed on top* — and those are opposite
+situations that demand opposite responses.
+
+## The failure this skill exists to avoid
+
+**Never report an unsatisfied step without first saying what completed.**
+
+A branch whose pipeline ran, passed, and then took one follow-up commit is in
+excellent shape. Reporting that as "reviews stale — run `/quorum:3-review`" is
+mechanically true and badly misleading: it reads as *the pipeline did not do its
+job*, and it sends people to re-run a finished forty-minute pipeline over a
+five-line diff.
+
+Lead with what ran and what it concluded. Then say precisely what has changed
+since, and how big it is. A reader who knows the pipeline completed and that one
+small commit landed after it can make the call themselves; a reader told only
+"stale" cannot.
 
 ## One deliberate deviation from the contract
 
@@ -30,39 +48,56 @@ things to fix. Status never writes and never runs another step.
 
 ## Procedure
 
-1. **Gather.** Everything you need is on disk and in git:
+1. **Read `state.json` first.** It is the index of what has run:
+
+   ```bash
+   cat docs/work/<slug>/state.json 2>/dev/null
+   ```
+
+   Missing or malformed is not an error — the work item predates it, or a step
+   failed to record. Fall back to inferring from the artifacts, and say that the
+   answer is inferred rather than recorded.
+
+2. **Gather the rest** from disk and git:
 
    ```bash
    git branch --show-current                        # slug source; default branch = a finding
    git log --oneline -1                             # silent failure = no commits yet
    ls -1 docs/work/ 2>/dev/null                     # known work items
    sed -n '1,12p' docs/work/<slug>/plan.md          # Slug, Branch, Status
-   grep -c '^- \[ \] S' docs/work/<slug>/plan.md    # unticked build steps
    grep -c '^- \[x\] S' docs/work/<slug>/plan.md    # ticked build steps
    ls -1 docs/work/<slug>/reviews/ 2>/dev/null      # lenses run, and which round
    sed -n '1,12p' docs/work/<slug>/verdict.md       # Outcome, Test suite
    git status --porcelain                           # uncommitted work
    ```
 
-2. **Resolve which work item.** Derive the slug from the branch per the contract.
-   If that directory does not exist but others do under `docs/work/`, say which
-   ones exist and that none matches the branch — a work item on the wrong branch
-   is worth knowing about.
+3. **Compute what has changed since each stage.** This is the whole point of the
+   recorded `head` SHAs — ask git instead of guessing:
 
-3. **Verify the plan's *Status* against the disk.** The *Status* field is a
-   claim; the artifacts are evidence. When they disagree — `built` with unticked
-   steps, `adjudicated` with no `verdict.md` — report both and believe the disk.
+   ```bash
+   git log --oneline <state.review.head>..HEAD      # commits no lens has seen
+   git diff --stat <state.review.head>..HEAD        # and how big they are
+   git log --oneline <state.verdict.head>..HEAD     # commits the judge never saw
+   ```
 
-4. **Check for staleness.** Reviews and verdicts are only as current as the diff
-   they were written against:
+   Empty means the reviews cover the branch. Non-empty names exactly what they do
+   not — report the commit subjects and the diffstat, not the word "stale".
 
-   - Commits or uncommitted changes **newer than the newest review** mean the
-     reviews no longer cover the change. Another `/quorum:3-review` round is due.
-   - A review file **newer than `verdict.md`** means the verdict predates the last
-     review round and is stale.
+   **Once a verdict exists, `verdict.head..HEAD` is the number that matters.**
+   The judge commits its own accepted fixes after the lenses have read the tree,
+   so `review.head..HEAD` contains the judge's commit on *every* completed run,
+   by design. Reporting that as unreviewed work would flag every successful
+   pipeline as a problem — the same misleading answer this skill exists to avoid,
+   in a different costume. Mention it only when there is no verdict yet, or when a
+   lens round is genuinely owed.
 
-   File mtimes are a heuristic, not proof — a checkout can rewrite them. Say
-   "looks stale" and give the reason; do not assert it as fact.
+   Only when no `head` was recorded, fall back to comparing file mtimes, and say
+   "looks stale, inferred from timestamps" rather than asserting it.
+
+4. **Cross-check the record against the disk.** `state.json` and the plan's
+   *Status* are claims; the artifacts are evidence. When they disagree — `stage`
+   `adjudicated` with no `verdict.md`, `built` over unticked steps — report both
+   and believe the disk.
 
 5. **Check the open questions.** Unanswered questions in `plan.md` matter most
    *before* the approval gate, because `/quorum:pipeline` leaves nobody to ask.
@@ -73,60 +108,92 @@ things to fix. Status never writes and never runs another step.
 
 ## States
 
-Read down the table and report the **first** row that matches — it is the earliest
-unsatisfied step, which makes it the real state.
+Read down the table and report the **first** row that matches. Every row from
+*Built* down also reports what already completed, per the rule above.
 
 | State | Looks like | Next |
 |---|---|---|
 | Wrong branch | Branch is `main`/`master`, or the repo has no commits | `git checkout -b feature/<name>`, then `/quorum:1-plan` |
-| Not started | No `docs/work/<slug>/plan.md` | `/quorum:1-plan <what you want built>` |
-| Planned | Status `planned` | Read the plan, settle open questions, then `/quorum:pipeline` (it holds the approval gate) or `/quorum:2-build` to drive by hand |
-| Approved | Status `approved`, no code yet | `/quorum:pipeline`, or `/quorum:2-build` |
+| Not started | No `docs/work/<slug>/` | `/quorum:1-plan <what you want built>` |
+| Planned | `stage` `planned` | Settle open questions, then `/quorum:pipeline` (it holds the approval gate) or `/quorum:2-build` to drive by hand |
+| Approved | `stage` `approved` | `/quorum:pipeline`, or `/quorum:2-build` |
 | Part built | Some `S` steps ticked, some not | `/quorum:2-build` — it resumes from the first unticked step |
-| Built | Status `built`, no `reviews/` | `/quorum:3-review` |
+| Built | `stage` `built`, no `reviews/` | `/quorum:3-review` |
 | Reviewed | `reviews/` populated, no `verdict.md` | `/quorum:4-quorum` |
-| Reviews stale | Commits landed after the newest review | `/quorum:3-review` again — it appends a new round, never overwrites |
-| Adjudicated, blocked | `verdict.md` Outcome `blocked`, or a red suite | Fix what the verdict names, then `/quorum:3-review` and `/quorum:4-quorum` again |
-| Adjudicated, escalations | `verdict.md` has an *Escalations* section | Decide those questions yourself — they were escalated because they are not the judge's to make |
-| Done | Outcome `ready`, suite green, no escalations | Open the PR (`/quorum:pipeline` does this at the end), or merge |
+| Reviews stale | Commits after `review.head`, not yet adjudicated | `/quorum:3-review` — it appends a new round, never overwrites |
+| Adjudicated, blocked | Outcome `blocked`, or a red suite | Fix what the verdict names, then `/quorum:3-review` and `/quorum:4-quorum` |
+| Adjudicated, escalations | Verdict has open *Escalations* | Decide those yourself — they were escalated because they are not the judge's to make |
+| **Adjudicated, then changed** | Verdict exists **and** commits landed after `verdict.head` | Say the pipeline completed and what it concluded, then size the delta — see below |
+| Published | `pr.url` recorded, nothing changed since | Nothing here — the PR is the deliverable |
+| Done | Outcome `ready`, suite green, no escalations, nothing since | Open the PR (`/quorum:pipeline` does this), or merge |
+
+### Adjudicated, then changed
+
+The most commonly misread state. It means commits landed after `verdict.head` —
+not merely after `review.head`, which every finished run has by design.
+
+Report, in this order: the pipeline completed and what it concluded; the commits
+since the verdict, by subject and diffstat; and that those commits alone are
+unreviewed.
+
+Then size the call rather than making it for them:
+
+- **A small, well-guarded delta** — a few lines, covered by tests that were shown
+  failing first. Opening the PR is defensible. Say so.
+- **Anything larger, or anything self-assessed** — code written and graded by the
+  same session is exactly what the lenses exist to not take at face value.
+  `/quorum:3-review` appends a round without re-adjudicating.
+
+Never recommend re-running the whole `/quorum:pipeline` over a small follow-up
+commit. It re-pays for build, six lenses, and adjudication to look at a diff a
+single review round covers.
 
 Two footnotes worth reporting when they apply:
 
-- **A missing lens is not a clean bill of health.** If `reviews/` has fewer than
-  the five lenses, name the missing one and say its dimension is unexamined.
+- **A missing lens is not a clean bill of health.** If `review.missing` is
+  non-empty or `reviews/` has fewer than six lenses, name the missing one and say
+  its dimension is unexamined. `behavior` missing means nobody ran the software.
+- **No `recheck` means the judge's own commits were never reviewed.** Absent is
+  not clean. Say so, and that `/quorum:pipeline` is what covers them.
 - **`ready` alongside escalations or unmet criteria is a contradiction** in the
   judge's own output. Report it as suspicious rather than smoothing it over.
 
 ## Report template
 
-Keep it to this. The developer is asking a question, not requesting a document.
+Terse. The developer is asking a question, not requesting a document. Rows for
+stages that have not run are omitted, not written as "absent".
 
 ```markdown
-**Work item:** <slug> — branch `<branch>`
-**State:** <state from the table>
+**retry-failed-webhooks** · `feature/retry-failed-webhooks` · **adjudicated, 1 commit since**
 
-| Artifact | State |
+| | |
 |---|---|
-| `plan.md` | Status `built` — 4 of 6 steps ticked |
-| `reviews/` | 5 files, round 1 (001–005) |
-| `verdict.md` | absent |
-| working tree | 3 uncommitted files |
+| plan | 6/6 steps · 4 ACs · 0 open |
+| reviews | round 1 · 5 lenses · 7 findings (1 blocker) |
+| verdict | ready with follow-ups · suite green · 2 escalations |
+| since review | `ea84c9d` fix retry gating — 3 files, +18 −4 |
+| tree | clean |
 
-<One or two sentences on what that means — including anything stale,
-unanswered, contradictory, or missing.>
+The pipeline ran and completed. `ea84c9d` landed afterwards — the escalation
+fixes — so it is the only part of the branch no lens has seen.
 
-**Next:** `/quorum:3-review`
+**Next:** `/quorum:3-review` for one round over that commit, or open the PR if you
+are satisfied five lines guarded by two tests do not need it.
 ```
 
 ## Rules
 
-- **Read-only.** No edits, no commits, no running another step. A status command
-  that fixes things is a status command nobody can trust to tell them the truth.
-- **Exactly one next command.** The earliest unsatisfied step. Listing every
-  possible move puts the decision back on the person who ran this to avoid making it.
-- **The disk outranks the *Status* field.** A field says what a previous step
-  intended; the artifacts say what actually happened.
-- **Report ugly states plainly** — blocked, red, stale, missing lens. That is the
-  entire value of asking.
+- **Read-only.** No edits, no commits, no writing `state.json`, no running another
+  step. A status command that fixes things is one nobody can trust to report
+  honestly.
+- **Say what completed before what is missing.** Every time.
+- **One next command.** The earliest unsatisfied step. Offer a second only in
+  *Adjudicated, then changed*, where the delta's size genuinely decides it — and
+  then state the size so the reader can judge.
+- **The disk outranks `state.json`, which outranks the *Status* field.** The
+  artifacts are what happened; the index is what a step reported; the field is
+  what a step intended.
+- **Report ugly states plainly** — blocked, red, missing lens, contradictory. That
+  is the entire value of asking.
 - Say "I cannot tell" when the evidence is genuinely ambiguous, and say what would
   resolve it.

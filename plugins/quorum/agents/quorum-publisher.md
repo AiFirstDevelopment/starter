@@ -91,6 +91,13 @@ Plan: `docs/work/<slug>/plan.md` · Reviews: `docs/work/<slug>/reviews/`
 Omit empty sections rather than writing "None" into them. Keep it scannable; the
 detail lives in the verdict.
 
+## Finish
+
+Record the state per the contract's `state.json` section: stage `published`, and
+a `pr` object with the URL and whether it is a draft. If you could not publish,
+record no `pr` and say why in the log line — a state file claiming a PR that does
+not exist is worse than one that admits the branch is unpublished.
+
 ## Rules
 
 - **Never merge the PR**, never approve it, never enable auto-merge. You open it;

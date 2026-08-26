@@ -60,3 +60,14 @@ Write `docs/work/<slug>/verdict.md` in the format `/quorum:4-quorum` specifies,
 and set *Status* in `plan.md` to `adjudicated`. Lead with anything unmet,
 escalated, or failing — the human is scanning for what needs them, not for
 reassurance.
+
+Then record the state per the contract's `state.json` section, taking `head`
+after your commit lands. You record **two** things, because the scribe that wrote
+the review files is write-only and cannot record anything itself:
+
+1. the review round the pipeline handed you — round number, lenses, missing
+   lenses, findings, blockers, and the `head` those lenses read;
+2. your own verdict — outcome, suite, accepted, rejected, unmet, escalations.
+
+The review `head` is what later tells a human exactly which commits no lens has
+seen. Getting it wrong is worse than omitting it.

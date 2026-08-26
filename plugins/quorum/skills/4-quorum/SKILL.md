@@ -49,7 +49,36 @@ If any review lens is missing, note it — an unexamined dimension is itself a r
    Never report a verdict over a red suite.
 
 6. **Write `docs/work/<slug>/verdict.md`** and set *Status* in `plan.md` to
-   `adjudicated`. Report the verdict to the user, leading with anything escalated.
+   `adjudicated`.
+
+7. **Record the state** per the contract, taking `head` after committing your
+   fixes so it names the tree you actually judged:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/bin/state.py" docs/work/<slug> \
+     '{"stage":"adjudicated","verdict":{"outcome":"ready with follow-ups",
+       "suite":"green","accepted":3,"rejected":4,"unmet":0,"escalations":2,
+       "head":"'"$(git rev-parse --short HEAD)"'"},
+       "log":"4-quorum adjudicated ready with follow-ups, 2 escalations"}'
+   ```
+
+   Record the outcome you actually reached. A `blocked` verdict recorded as
+   `ready` defeats every check downstream of it.
+
+8. **Report** the verdict to the user, leading with anything escalated.
+
+## Your own diff is the least-reviewed code on the branch
+
+Every finding you fix becomes a commit the six lenses never saw — they read the
+tree before you touched it. You are also the last one to look, at the end of a
+long run, which is when a fix that suppresses a symptom looks the same as one that
+removes a cause.
+
+`/quorum:pipeline` runs a read-only pass over your commits for exactly this
+reason. Driving the steps by hand, nothing does — so keep your fixes small enough
+to be obviously right, and where one is not, prefer recording it as a follow-up
+over a repair you cannot vouch for. **Never treat your own confidence as
+evidence**; it is the thing this pipeline is built to distrust.
 
 ## What you may not do
 

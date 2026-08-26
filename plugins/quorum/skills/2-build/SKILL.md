@@ -44,9 +44,23 @@ Read `${CLAUDE_PLUGIN_ROOT}/reference/contract.md` for slug and layout rules.
 7. **Run whatever tests exist** (`/tests:run`, or the repo's own command if the
    `tests` plugin is not enabled) and report the result honestly. Do not report the build complete with failing tests.
 
-8. **Update *Status*** in `plan.md` to `built`, then report: what was built, which
-   steps are ticked, what deviated, test results, and anything you deliberately
-   left out.
+8. **Update *Status*** in `plan.md` to `built` and record the state per the
+   contract. If you committed, take `head` afterwards so it names the tree you
+   actually built:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/bin/state.py" docs/work/<slug> \
+     '{"stage":"built","build":{"stepsDone":6,"deviations":2,"suite":"green",
+       "head":"'"$(git rev-parse --short HEAD)"'"},
+       "log":"2-build built 6/6, 2 deviations, suite green"}'
+   ```
+
+   `suite` is `green`, `red`, or `none`. Record `red` honestly — the next step
+   needs to know, and a suite recorded green over failing tests is the one lie
+   that makes every later report worthless.
+
+9. **Report**: what was built, which steps are ticked, what deviated, test
+   results, and anything you deliberately left out.
 
 ## When the plan is wrong
 
