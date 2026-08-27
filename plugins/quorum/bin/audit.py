@@ -10,7 +10,9 @@ So the criteria list is hashed when it is written, and the report cites the hash
 it was audited against. Three values have to agree: what `criteria.md` contains
 now, what `criteria.md` says it contained, and what `report.md` says it measured.
 
-  audit.py --check-slug <slug>                     # safe as a directory name?
+  audit.py --check-slug - <<'S'                    # safe as a directory name?
+  <slug>
+  S
   audit.py --hash docs/audit/<slug>/criteria.md    # the hash of the criteria list
   audit.py --verify docs/audit/<slug> [--json]     # all three agree?
   audit.py --verify <dir> --expect-report          # ...and a report exists at all
@@ -42,7 +44,14 @@ VERSION = '1'
 # escaped the audit directory before the check was ever reached, and the skill's
 # own "git status is clean" verification could not see a file written outside the
 # working tree. Prose told the skill to use kebab-case; prose is what a model can
-# talk itself out of. Same pattern as audit.js, deliberately.
+# talk itself out of.
+#
+# Matched with fullmatch(), not match(). The pattern is the same literal audit.js
+# uses, but Python's `$` also matches immediately before a trailing newline while
+# JavaScript's does not, so `match()` blessed a slug audit.js would later reject —
+# after criteria.md had already been written and the human had already spent the
+# gate. The two validators of the same value have to agree, and fullmatch() is
+# what makes them agree.
 SLUG = re.compile(r'^[a-z0-9]+(-[a-z0-9]+)*$')
 
 CRITERIA_HEADING = 'Criteria'
@@ -180,7 +189,8 @@ def verify(work_dir, expect_report=False):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check-slug', metavar='SLUG',
-                        help='exit 0 if SLUG is safe as a directory name, 2 if it is not')
+                        help='exit 0 if SLUG is safe as a directory name, 2 if it is not; '
+                             '"-" reads the slug from stdin, which is how the skill passes it')
     parser.add_argument('--hash', metavar='CRITERIA')
     parser.add_argument('--verify', metavar='AUDIT_DIR')
     parser.add_argument('--json', action='store_true')
@@ -194,7 +204,26 @@ def main():
         return 0
 
     if opts.check_slug is not None:
-        if SLUG.match(opts.check_slug):
+        # "-" means stdin. The slug is derived from the repository under audit —
+        # a spec file's basename, or a name the model read out of untrusted prose —
+        # and the caller is a model writing a shell command. Interpolated into a
+        # double-quoted argument it is still expanded by the shell, so a slug
+        # holding $(...) or backticks runs before this check ever sees it: the
+        # validator becomes the thing that executes the payload. Read from stdin
+        # behind a quoted heredoc delimiter, no shell expansion touches it.
+        # One trailing newline is stripped and no more: a heredoc always adds one,
+        # so keeping it would reject every well-formed slug. Anything else — a
+        # second newline, a space, a tab — is left in place and rejected below,
+        # because it did not come from the delimiter.
+        if opts.check_slug == '-':
+            slug = sys.stdin.read()
+            if slug.endswith('\n'):
+                slug = slug[:-1]
+            if slug.endswith('\r'):
+                slug = slug[:-1]
+        else:
+            slug = opts.check_slug
+        if SLUG.fullmatch(slug):
             return 0
         sys.stderr.write(
             'audit: %r cannot be used as a slug.\n\n'
@@ -202,7 +231,7 @@ def main():
             'anything is written, so it must be lowercase alphanumeric words joined by\n'
             'single hyphens: no slashes, no "..", no leading or trailing hyphen, no\n'
             'spaces. Nothing has been written. Pick a slug that names the spec.\n'
-            % opts.check_slug)
+            % slug)
         return 2
 
     if opts.hash:

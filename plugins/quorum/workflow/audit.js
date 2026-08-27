@@ -61,12 +61,18 @@ const REFUTE_MODEL = models.refute || 'sonnet'
 // names declares a file-editing tool.
 //
 // That check is load-bearing rather than a floor. No agent this script names is
-// granted a file-editing tool, and no agent that can read the audited repository
-// is granted a shell either: quorum-auditor holds Read, Grep and Glob and nothing
-// else, so it cannot edit a file, commit, push, or run a test suite however it is
-// prompted — or however it is instructed by something it reads in the repository
-// it is auditing, which is untrusted input. selftest.py asserts both properties,
-// so they survive someone editing this file or that agent without reading this.
+// granted a file-editing tool, none is granted a shell, and none is granted
+// anything outside a fixed allowlist: quorum-auditor holds Read, Grep and Glob and
+// nothing else, so it cannot edit a file, commit, push, or run a test suite however
+// it is prompted — or however it is instructed by something it reads in the
+// repository it is auditing, which is untrusted input. selftest.py asserts all
+// three, so they survive someone editing this file or that agent without reading
+// this.
+//
+// Scoped to the agents *this script* names, deliberately. The audit skill runs in
+// an ordinary session that holds a shell and reads the spec out of the repository
+// under audit; for that session the same rule is prose. reference/audit.md says so
+// rather than letting a claim about "the agents" cover it.
 //
 // NEVER_RUN below is still prose, and prose is what a model can talk itself out
 // of. It stays because an agent that cannot see a shell should know why, and
@@ -130,9 +136,24 @@ const AUDIT_SCHEMA = {
   additionalProperties: false,
   properties: {
     cluster: { type: 'string' },
+    // Kept deliberately, now that selftest.py asserts no agent named here is
+    // granted a shell. It is a tripwire for the case the grant check cannot see:
+    // an agent reaching execution some way the allowlist did not anticipate, or
+    // a future edit that widens the grant and a stale suite that does not catch
+    // it. It should now never fire, and that is the point of leaving it in.
+    //
+    // The question is worded to be unambiguous about Read/Grep/Glob, because the
+    // failure mode of a vague one is a false alarm printed into a production
+    // repository's report: an auditor that searched the repository is not an
+    // auditor that ran it, and answering "false" for having grepped would tell an
+    // operator their software may have been started when it cannot have been.
     ranNothing: {
       type: 'boolean',
-      description: 'confirm you executed nothing belonging to the repository under audit',
+      description:
+        'true if you started no process belonging to the repository under audit — no ' +
+        'application, build, test suite, script, install step or linter. Reading, ' +
+        'searching and listing its files with Read, Grep and Glob is not running it: ' +
+        'answer true if that is all you did. Answer false only if a process actually ran.',
     },
     results: {
       type: 'array',
@@ -304,7 +325,10 @@ const audits = (
             '  unverified — you could not settle it from code and tests alone. Say why in one ' +
             'sentence.\n\n' +
             NEVER_RUN + '\n\n' + NEVER_EXTRA + '\n\n' +
-            'Return ranNothing true only if that is true. Ten weak gaps are worse than two real ' +
+            'Set ranNothing true if you started no process belonging to the repository under ' +
+            'audit. Reading, searching and listing its files is not running it — that is your ' +
+            'whole job here, and it does not make the answer false. Answer false only if a ' +
+            'process actually ran. Ten weak gaps are worse than two real ' +
             'ones: report what you can defend with a citation or a search.',
           {
             label: 'audit:' + cluster.name,

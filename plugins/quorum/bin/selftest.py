@@ -8,15 +8,18 @@ fires — and, just as importantly, that legitimate edits are still allowed.
 
 It also checks the one part of the orchestrators a machine can settle without a
 live run: that every script under workflow/ calls its agents by names that
-actually register, and that no agent workflow/audit.js calls declares a
-file-editing tool. Everything else in those scripts needs real agents to
-exercise. This does not, and the first of them is the failure that has already
-cost two runs.
+actually register, and that every agent workflow/audit.js calls is granted
+nothing but the tools it needs to read. Everything else in those scripts needs
+real agents to exercise. This does not, and the first of them is the failure that
+has already cost two runs.
 
-Note what the second check settles and what it does not: it settles the declared
-grants, not what a shell can do with them. quorum-auditor holds Bash, so "cannot
-write to the repository it audits" is a rule the prompts state, not one this file
-proves.
+Note what the second check settles and what it does not. It settles the declared
+grants of the agents audit.js names: no file-editing tool, no shell, and nothing
+outside a fixed allowlist, so "cannot write to or execute the repository it
+audits" is proven here rather than promised in a prompt. It settles nothing about
+the audit *skill*, which runs in an ordinary session holding a shell and reads the
+spec file out of the repository under audit; that restraint is prose, and
+reference/audit.md says so.
 
     python3 selftest.py [-v]
 
@@ -69,6 +72,18 @@ READ_TOOLS = ['Read', 'Grep', 'Glob', 'Bash', 'NotebookRead']
 # suite and the application besides. Bash appears in READ_TOOLS as well — a shell
 # genuinely can read — and the two memberships answer different questions.
 EXEC_TOOLS = ['Bash']
+
+# And the allowlist the three lists above cannot replace. WRITE_TOOLS, READ_TOOLS
+# and EXEC_TOOLS are membership tests over exact tool names, which makes them only
+# as good as the spellings someone thought of: `Bash(git log:*)` is a shell and is
+# not the string 'Bash', and `mcp__filesystem__write_file` edits files and is not
+# in WRITE_TOOLS. Both passed every denylist check while holding exactly the power
+# those checks exist to deny. So the grant is matched positively as well — an
+# audit.js agent may hold these tools and nothing else, and an unfamiliar name
+# fails rather than passing unseen. Widening either list is a decision someone has
+# to make on purpose, which is the point.
+AUDIT_READ_TOOLS = ['Read', 'Grep', 'Glob']
+AUDIT_WRITE_ONLY_TOOLS = ['Write']
 
 PLAN = """# Plan: demo
 
@@ -1165,6 +1180,61 @@ def test_audit():
         check('a file with no criteria section cannot be hashed', code == 2)
         code, _, _ = run(['python3', AUDIT, '--verify', os.path.join(work, 'nope')])
         check('a missing audit directory is could-not-run, not clean', code == 2)
+
+        # --check-slug. The slug is pasted into docs/audit/<slug>/ and written to
+        # before audit.js — which validates its own copy — ever runs, so this is
+        # the only thing standing between a slug carrying ".." and a file written
+        # outside the working tree, where the skill's own `git status` check
+        # cannot see it. It had no coverage at all: replacing the pattern with
+        # `.*` left the suite green.
+        for good in ['widget-api', 'billing', 'a1', 'two-three-four']:
+            code, _, err = run(['python3', AUDIT, '--check-slug', good])
+            check('slug %r is accepted' % good, code == 0, 'exit %s: %s' % (code, err.strip()))
+
+        # Each of these is a different way to leave the audit directory or to
+        # produce a path nothing downstream can handle, and each is named so a
+        # regression says which one stopped being caught.
+        bad = {
+            'parent directory': '..',
+            'a traversal': '../../etc',
+            'a nested path': 'a/b',
+            'an absolute path': '/etc',
+            'uppercase': 'Foo',
+            'a leading hyphen': '-x',
+            'a trailing hyphen': 'x-',
+            'a doubled hyphen': 'a--b',
+            'the empty string': '',
+            'a space': 'two words',
+            'a dollar substitution': '$(printf INJECTED)',
+            'a backtick substitution': '`printf INJECTED`',
+        }
+        for label, slug in sorted(bad.items()):
+            code, _, _ = run(['python3', AUDIT, '--check-slug', slug])
+            check('slug rejected: %s' % label, code == 2, 'exit %s on %r' % (code, slug))
+
+        # Python's `$` also matches immediately before a trailing newline and
+        # JavaScript's does not, so `match()` here blessed a slug audit.js would
+        # reject afterwards — after criteria.md was written and the gate spent.
+        # fullmatch() is what keeps the two validators agreeing.
+        code, _, _ = run(['python3', AUDIT, '--check-slug', 'ok\n'])
+        check('a trailing newline is rejected, as audit.js rejects it', code == 2)
+
+        # The skill passes the slug on stdin behind a quoted heredoc, because a
+        # slug interpolated into a shell word is expanded by bash before audit.py
+        # sees it. One trailing newline is the delimiter's and is stripped; a
+        # second one is not.
+        code, _, err = run(['python3', AUDIT, '--check-slug', '-'], stdin=b'widget-api\n')
+        check('a slug on stdin is accepted', code == 0, 'exit %s: %s' % (code, err.strip()))
+        code, _, _ = run(['python3', AUDIT, '--check-slug', '-'], stdin=b'../../etc\n')
+        check('a traversal on stdin is rejected', code == 2)
+        code, _, _ = run(['python3', AUDIT, '--check-slug', '-'], stdin=b'widget-api\n\n')
+        check('only the delimiter newline is stripped from stdin', code == 2)
+
+        # Rejection must write nothing. The whole point of running this before
+        # criteria.md is that a bad slug costs the target repository nothing.
+        before = sorted(os.listdir(work))
+        run(['python3', AUDIT, '--check-slug', '../../etc'], cwd=work)
+        check('a rejected slug writes nothing', sorted(os.listdir(work)) == before)
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
@@ -1395,6 +1465,20 @@ def test_agents():
                   not execs,
                   'grants %s — a shell can edit a file, commit, push, and run the test '
                   'suite, which defeats every prose rule in the prompts at once' % execs)
+
+            # The positive half. The three checks around it ask "is this tool one
+            # of the bad ones"; this one asks "is this tool one of the ones we
+            # meant", which is the only form that survives a spelling nobody
+            # anticipated — a scoped shell, an MCP tool, a tool invented after
+            # this line was written.
+            allowed = AUDIT_WRITE_ONLY_TOOLS if name in WRITE_ONLY_EXEMPT else AUDIT_READ_TOOLS
+            extra = sorted(t for t in tools if t not in allowed)
+            check('%s: %s grants only %s' % (entry, name, ', '.join(allowed)),
+                  not extra,
+                  'also grants %s — an agent audit.js names may hold only the allowlist, '
+                  'because a denylist cannot see a scoped shell such as Bash(git log:*) '
+                  'or an MCP tool that writes' % extra)
+
             if name in WRITE_ONLY_EXEMPT:
                 # The exemption is itself checked, so it cannot be widened by
                 # quietly granting the scribe a way to read what it overwrites.

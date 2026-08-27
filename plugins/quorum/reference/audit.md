@@ -50,12 +50,24 @@ definition never used this pipeline — reports only `?? docs/` under plain
 files were created, so the check stops proving the thing it is there to prove.
 
 The audit also never **executes** the repository under audit: not its
-application, not its build, not its test suite, not a script it ships. This is a
-property of the tool grants rather than of the prompts — the agents that read the
-audited repository hold `Read`, `Grep` and `Glob` and no shell, and `selftest.py`
-asserts it — so it holds even against a repository whose files carry instructions
-aimed at the agent reading them. A criterion that could only be settled by running
-the software is `unverified`, never `gap`.
+application, not its build, not its test suite, not a script it ships.
+
+For every agent `workflow/audit.js` launches, that is a property of the tool
+grants rather than of the prompts: they hold `Read`, `Grep` and `Glob` and no
+shell, and `selftest.py` asserts it. So it holds against a repository whose files
+carry instructions aimed at the agent reading them — an agent cannot act on an
+instruction to run something when running is not among its tools.
+
+**One component is outside that guarantee, and it is worth naming rather than
+rounding off.** The `audit` skill itself runs in the ordinary session, which holds
+a shell, and Step 1 has it read the spec file out of the repository under audit.
+For that session the rule is prose: its shell is for `git status` and
+`bin/audit.py`, and nothing mechanical enforces that. It is the one place where
+untrusted repository content meets a shell, so it is stated here instead of being
+covered by a claim about "the agents".
+
+A criterion that could only be settled by running the software is `unverified`,
+never `gap`.
 
 ## The status vocabulary
 

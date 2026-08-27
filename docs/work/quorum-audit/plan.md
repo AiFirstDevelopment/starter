@@ -42,9 +42,21 @@ delegation, both settling escalations the judge raised and could not decide:
   about what the agents are granted (verdict E3). `quorum-auditor` no longer holds
   `Bash`, so the criterion is now mechanically checked rather than prompted.
 
-`requirementsHash` was re-recorded at that point, by `1-plan`'s rule that the
-baseline is written when the requirements are final. No later step may re-record
-it, and none has.
+A third requirement moved shortly afterwards, under the same delegation and from
+a different source — not a verdict escalation but the fixture exercise recorded in
+`reviews/007-fixture-run.md`:
+
+- **AC1** now specifies `git status --porcelain -uall`. Plain `--porcelain`
+  collapses a wholly-untracked directory to `?? docs/`, which is the ordinary
+  reading in an audit target and cannot be told apart from a stray write, so the
+  criterion named a check that could not settle it.
+
+`requirementsHash` was re-recorded once, after **all three** amendments, by
+`1-plan`'s rule that the baseline is written when the requirements are final —
+`state.json` timestamps that at 10:51:46, after the AC1 change at the same minute
+and after the AC10/AC11 change at 10:47:15. No later step may re-record it, and
+none has: the hash standing in `state.json` is the one `1-plan` wrote, and both
+`/quorum:3-review` and `/quorum:4-quorum` are measured against it.
 
 ## Intent
 
@@ -173,17 +185,31 @@ the same change.
   free text), derives numbered criteria with citations, writes `criteria.md`,
   holds the gate, launches `audit.js`, and reports what came back.
 - `plugins/quorum/workflow/audit.js` — the deterministic sequence: cluster the
-  criteria, fan out read-only auditors, run one behaviour pass, refute every
-  claimed gap on a different model, then have the scribe write `report.md`.
-- `plugins/quorum/agents/quorum-auditor.md` — read-only (`Read, Grep, Glob,
-  Bash`), used for all three of those passes. Its standing obligation is the one
+  criteria, fan out read-only auditors, refute every claimed gap on a different
+  model, then have the scribe write `report.md`. (This bullet asked for "one
+  behaviour pass" until the judge struck it. It was a leftover from a superseded
+  draft: a behaviour pass launches the audited software, which AC11 forbids, which
+  *Non-goals* forbids, which the diagram above does not contain, and which
+  *Decisions worth stating* records as deliberately given up. The builder raised it
+  as a PLAN DEFECT; nothing in the plan supported keeping it.)
+- `plugins/quorum/agents/quorum-auditor.md` — read-only (`Read, Grep, Glob`),
+  used for both the audit and the refute pass. Its standing obligation is the one
   the reviewer agent does not carry: **a claim that something is absent must name
-  the searches that came back empty.**
+  the searches that came back empty.** (This bullet granted `Bash` as well until
+  AC11 was amended under delegated authority to make the no-shell property
+  mechanical. `selftest.py` now fails on that grant, so the two would have
+  contradicted each other: implementing the plan of record as it stood would have
+  turned the suite red.)
 - `plugins/quorum/reference/audit.md` — the `docs/audit/<slug>/` layout, the
   `criteria.md` and `report.md` formats, and the `met` / `gap` / `unverified`
   vocabulary. A separate file from `contract.md` so the pipeline's agents do not
   read audit material they will never use.
-- `plugins/quorum/bin/audit.py` — hashes and verifies the criteria list (AC5).
+- `plugins/quorum/bin/audit.py` — hashes and verifies the criteria list (AC5),
+  and validates the slug before the skill pastes it into a path (`--check-slug`,
+  added after the plan was written: the skill writes `criteria.md` before
+  `audit.js` — which validates its own copy — ever runs, so a slug carrying `..`
+  escaped the audit directory while the Step 6 `git status` check still reported
+  clean, because it cannot see a file written outside the working tree).
   Deliberately **not** a flag on `guard.py`: that file is vendored into consuming
   repos and version-checked for drift, so every change to it obliges every adopter
   to re-vendor. An audit helper has no business forcing that.
