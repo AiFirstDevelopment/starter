@@ -6,10 +6,12 @@ pipeline's promises now rest on. Prose about them is worth nothing; this builds
 throwaway repositories, breaks each rule on purpose, and checks that the rule
 fires — and, just as importantly, that legitimate edits are still allowed.
 
-It also checks the one part of the orchestrator a machine can settle without a
-live run: that pipeline.js calls its agents by names that actually register.
-Everything else in that script needs real agents to exercise. This does not, and
-it is the failure that has already cost two runs.
+It also checks the one part of the orchestrators a machine can settle without a
+live run: that every script under workflow/ calls its agents by names that
+actually register, and that the agents workflow/audit.js calls cannot write to
+the repository they are auditing. Everything else in those scripts needs real
+agents to exercise. This does not, and the first of them is the failure that has
+already cost two runs.
 
     python3 selftest.py [-v]
 
@@ -31,11 +33,25 @@ HOOK = os.path.join(HERE, 'plan-lock-hook.py')
 STATE = os.path.join(HERE, 'state.py')
 HISTORY = os.path.join(HERE, 'history.py')
 WATCH = os.path.join(HERE, 'watch.py')
+AUDIT = os.path.join(HERE, 'audit.py')
 
 PLUGIN = os.path.dirname(HERE)
 MANIFEST = os.path.join(PLUGIN, '.claude-plugin', 'plugin.json')
 AGENTS_DIR = os.path.join(PLUGIN, 'agents')
-PIPELINE = os.path.join(PLUGIN, 'workflow', 'pipeline.js')
+WORKFLOW_DIR = os.path.join(PLUGIN, 'workflow')
+
+# Scripts whose agents must not be able to touch the repository they run against.
+READ_ONLY_WORKFLOWS = ['audit.js']
+
+# quorum-scribe grants Write and nothing else: it writes the audit report and
+# cannot read a line of the repository under audit, transcribing what the
+# auditors hand it. Something has to write report.md, and a write-only agent
+# that cannot read is the smallest thing that can. Nothing else is exempt, and
+# the exemption is checked rather than trusted — see test_agents().
+WRITE_ONLY_EXEMPT = ['quorum-scribe']
+
+WRITE_TOOLS = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit']
+READ_TOOLS = ['Read', 'Grep', 'Glob', 'Bash', 'NotebookRead']
 
 PLAN = """# Plan: demo
 
@@ -980,6 +996,130 @@ def test_state():
         shutil.rmtree(repo, ignore_errors=True)
 
 
+# ------------------------------------------------------- the criteria hash
+
+CRITERIA = """# Audit criteria: demo
+
+- **Slug:** demo
+- **Spec:** `docs/spec.md`
+- **Criteria hash:** %s
+
+## Criteria
+
+- **AC1** — when a request arrives with no bearer token, the API answers 401.
+  - Source: "every endpoint requires a bearer token" — `docs/spec.md:14`
+- **AC2** — a failed charge is retried three times.
+  - Source: "retry three times" — *Retries*
+"""
+
+REPORT = """# Audit report: demo
+
+- **Slug:** demo
+- **Criteria hash:** %s
+
+## Outcome
+
+All clear
+"""
+
+
+def write_audit(work, criteria_body=None, recorded=None, cited=None):
+    """An audit directory whose three hashes can each be moved independently."""
+    path = os.path.join(work, 'criteria.md')
+    body = CRITERIA if criteria_body is None else criteria_body
+    with open(path, 'w') as handle:
+        handle.write(body % (recorded if recorded is not None else 'PLACEHOLDER'))
+    if recorded is None:
+        code, out, _ = run(['python3', AUDIT, '--hash', path])
+        with open(path, 'w') as handle:
+            handle.write(body % out.strip())
+    if cited is not None:
+        with open(os.path.join(work, 'report.md'), 'w') as handle:
+            handle.write(REPORT % cited)
+    return path
+
+
+def audit_hash(path):
+    code, out, _ = run(['python3', AUDIT, '--hash', path])
+    return out.strip() if code == 0 else None
+
+
+def test_audit():
+    """A softened criterion changes the hash, and verification says so.
+
+    The gate is the only human decision in an audit, and it is spent on a list of
+    criteria. If that list can be edited afterwards without anything noticing,
+    the gate bought nothing — a report measured against quietly weakened criteria
+    reads exactly like a report measured against the ones a human approved.
+    """
+    print('criteria hash')
+    work = tempfile.mkdtemp(prefix='quorum-audit-')
+    try:
+        path = write_audit(work)
+        original = audit_hash(path)
+        check('--hash prints a sha256', bool(original) and len(original or '') == 64,
+              'printed %r' % original)
+
+        code, _, _ = run(['python3', AUDIT, '--verify', work])
+        check('criteria alone verify clean', code == 0)
+
+        # Same list, reflowed: trailing space, a blank line, a ticked checkbox.
+        reflowed = CRITERIA.replace('## Criteria\n', '## Criteria\n\n').replace(
+            'answers 401.', 'answers 401.   ')
+        write_audit(work, criteria_body=reflowed, recorded=original)
+        check('reformatting does not change the hash', audit_hash(path) == original,
+              'reflowed to %r' % audit_hash(path))
+        code, _, _ = run(['python3', AUDIT, '--verify', work])
+        check('a reformatted criteria file still verifies', code == 0)
+
+        # Softened: "three times" becomes "at least once". Same criterion to
+        # skim, a different thing to be measured against.
+        softened = CRITERIA.replace('retried three times', 'retried at least once')
+        write_audit(work, criteria_body=softened, recorded=original)
+        weakened = audit_hash(path)
+        check('a softened criterion changes the hash', weakened != original,
+              'both hash to %s' % original)
+        code, out, _ = run(['python3', AUDIT, '--verify', work])
+        check('verification catches criteria edited after the gate', code == 1,
+              'exit %s: %s' % (code, out.strip()))
+
+        # A report citing the hash it was actually audited against.
+        write_audit(work, cited=original)
+        code, _, _ = run(['python3', AUDIT, '--verify', work])
+        check('a report citing the current criteria verifies', code == 0)
+
+        # ...and one citing a list that is no longer what criteria.md holds.
+        write_audit(work, cited='0' * 64)
+        code, out, _ = run(['python3', AUDIT, '--verify', work])
+        check('verification catches a report measured against other criteria', code == 1,
+              'exit %s: %s' % (code, out.strip()))
+        code, out, _ = run(['python3', AUDIT, '--verify', work, '--json'])
+        try:
+            parsed = json.loads(out)
+        except ValueError:
+            parsed = {}
+        check('--json reports the mismatch machine-readably',
+              parsed.get('clean') is False and bool(parsed.get('violations')),
+              'printed %r' % out.strip())
+
+        # No hash recorded at all is a violation, not a pass by omission.
+        os.remove(os.path.join(work, 'report.md'))
+        with open(path, 'w') as handle:
+            handle.write(re.sub(r'^- \*\*Criteria hash.*$', '', CRITERIA % '', flags=re.M))
+        code, _, _ = run(['python3', AUDIT, '--verify', work])
+        check('criteria with no recorded hash do not verify', code == 1)
+
+        # Nothing to hash is a could-not-run, distinct from a mismatch.
+        with open(path, 'w') as handle:
+            handle.write('# Audit criteria: demo\n\nno criteria section here\n')
+        code, _, _ = run(['python3', AUDIT, '--hash', path])
+        check('a file with no criteria section cannot be hashed', code == 2)
+        code, _, _ = run(['python3', AUDIT, '--verify', os.path.join(work, 'nope')])
+        check('a missing audit directory is could-not-run, not clean', code == 2)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 # ------------------------------------------------------------------ the agents
 
 def frontmatter_name(path):
@@ -996,19 +1136,41 @@ def frontmatter_name(path):
     return None
 
 
-def test_agents():
-    """The orchestrator names agents that exist, the way they actually register.
+def frontmatter_tools(path):
+    """The declared `tools:` list, or None when the agent declares no such field.
 
-    Nothing else covers pipeline.js. The guard checks what the pipeline produces,
-    not the script that runs it, so a wrong agentType stays invisible until a run
-    reaches the first agent() call — which is after the approval gate, on work
-    that then cannot start.
+    None is not "no tools" — it is *every* tool, inherited. The two are opposites
+    and the caller must not conflate them.
+    """
+    with open(path) as handle:
+        lines = handle.read().split('\n')
+    if not lines or lines[0].strip() != '---':
+        return None
+    for line in lines[1:]:
+        if line.strip() == '---':
+            break
+        if line.startswith('tools:'):
+            raw = line.split(':', 1)[1].strip().strip('[]')
+            return [part.strip() for part in raw.split(',') if part.strip()]
+    return None
+
+
+def test_agents():
+    """Every workflow script names agents that exist, the way they register.
+
+    Nothing else covers the workflow scripts. The guard checks what the pipeline
+    produces, not the script that runs it, so a wrong agentType stays invisible
+    until a run reaches the first agent() call — which is after the approval
+    gate, on work that then cannot start.
 
     Plugin agents register namespaced, <plugin>:<agent>. That prefix has twice
-    been dropped from this script and hand-patched back into the installed plugin
+    been dropped from pipeline.js and hand-patched back into the installed plugin
     cache, where the next `claude plugin update` throws it away. Three files have
     to agree and all three are in the repo, so nothing here needs a model or a
     live run.
+
+    Every script under workflow/ is scanned, not just pipeline.js — a second
+    orchestrator that nothing checks is the same failure waiting a second time.
     """
     with open(MANIFEST) as handle:
         plugin = json.load(handle)['name']
@@ -1026,31 +1188,71 @@ def test_agents():
         declared[name] = entry
     check('agents/ is not empty', bool(declared))
 
-    with open(PIPELINE) as handle:
-        source = handle.read()
-    # The trailing delimiter matters: it means a literal and nothing else. Any
-    # concatenation or lookup fails to match and shows up as a count mismatch
-    # below, rather than half-matching and quietly narrowing what is checked.
-    used = re.findall(r"agentType:\s*'([^']*)'\s*[,}\n]", source)
+    scripts = sorted(e for e in os.listdir(WORKFLOW_DIR) if e.endswith('.js'))
+    check('workflow/ holds scripts to check', bool(scripts))
 
-    # A computed agentType would slip past the regex and take the whole check
-    # with it, silently. Every site must be a plain literal for this to mean
-    # anything.
-    check('every agentType in pipeline.js is a plain string literal',
-          len(used) == source.count('agentType:'),
-          '%d agentType keys, %d literals — a computed name escapes this check'
-          % (source.count('agentType:'), len(used)))
-    check('pipeline.js calls agents at all', bool(used))
+    used_by = {}
+    for entry in scripts:
+        with open(os.path.join(WORKFLOW_DIR, entry)) as handle:
+            source = handle.read()
+        # The trailing delimiter matters: it means a literal and nothing else. Any
+        # concatenation or lookup fails to match and shows up as a count mismatch
+        # below, rather than half-matching and quietly narrowing what is checked.
+        refs = re.findall(r"agentType:\s*'([^']*)'\s*[,}\n]", source)
+        used_by[entry] = refs
+
+        # A computed agentType would slip past the regex and take the whole check
+        # with it, silently. Every site must be a plain literal for this to mean
+        # anything.
+        check('every agentType in %s is a plain string literal' % entry,
+              len(refs) == source.count('agentType:'),
+              '%d agentType keys, %d literals — a computed name escapes this check'
+              % (source.count('agentType:'), len(refs)))
+        check('%s calls agents at all' % entry, bool(refs))
 
     registered = set('%s:%s' % (plugin, name) for name in declared)
-    for ref in sorted(set(used)):
-        check('pipeline.js agentType %r resolves' % ref, ref in registered,
-              'nothing registers under that name; expected one of %s' % sorted(registered))
+    for entry in scripts:
+        for ref in sorted(set(used_by[entry])):
+            check('%s agentType %r resolves' % (entry, ref), ref in registered,
+                  'nothing registers under that name; expected one of %s' % sorted(registered))
 
+    everywhere = set()
+    for refs in used_by.values():
+        everywhere.update(refs)
     for name in sorted(declared):
-        check('agent %s is wired into the pipeline' % name,
-              '%s:%s' % (plugin, name) in used,
-              '%s defines it, pipeline.js never calls it' % declared[name])
+        check('agent %s is wired into a workflow' % name,
+              '%s:%s' % (plugin, name) in everywhere,
+              '%s defines it, no script under workflow/ ever calls it' % declared[name])
+
+    # workflow/audit.js runs against a repository that never asked for this
+    # pipeline, on its default branch, and the only reason that is safe is that
+    # nothing the script starts can write to that repository. That is a property
+    # of the agent definitions rather than of the prompts, so it is settled here
+    # instead of being promised in prose.
+    for entry in sorted(READ_ONLY_WORKFLOWS):
+        check('%s exists to be checked' % entry,
+              os.path.exists(os.path.join(WORKFLOW_DIR, entry)),
+              'the read-only guarantee is asserted over a script that is not there')
+        for ref in sorted(set(used_by.get(entry, []))):
+            name = ref.split(':', 1)[-1]
+            if name not in declared:
+                continue  # the resolve check above already failed on this one
+            tools = frontmatter_tools(os.path.join(AGENTS_DIR, declared[name]))
+            if tools is None:
+                check('%s: %s declares its tools' % (entry, name), False,
+                      'no tools: field, so it inherits every tool, file editing included')
+                continue
+            writes = sorted(t for t in tools if t in WRITE_TOOLS)
+            reads = sorted(t for t in tools if t in READ_TOOLS)
+            if name in WRITE_ONLY_EXEMPT:
+                # The exemption is itself checked, so it cannot be widened by
+                # quietly granting the scribe a way to read what it overwrites.
+                check('%s: %s is write-only, as its exemption requires' % (entry, name),
+                      bool(writes) and not reads,
+                      'grants %s — an agent that can read the audited repository may not write' % tools)
+                continue
+            check('%s: %s grants no file-editing tool' % (entry, name),
+                  not writes, 'grants %s' % writes)
 
 
 def main():
@@ -1063,6 +1265,7 @@ def main():
     test_default_branch()
     test_hook()
     test_state()
+    test_audit()
     test_agents()
     test_lifetime()
     test_version()
