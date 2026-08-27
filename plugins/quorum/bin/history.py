@@ -7,6 +7,8 @@ already a record of what this repository has been asked to do. This reads it bac
 Where the facts come from, and why not from somewhere easier:
 
   title, intent   the plan's own heading and Intent section
+  prompt          the plan's Prompt section, verbatim — absent on any item
+                  planned before 1-plan started recording it
   planned, who    the commit that ADDED plan.md — author name, email, date
   agent           Co-Authored-By trailers on that commit
   status          plan.md's Status, and state.json's stage where it exists
@@ -25,7 +27,11 @@ Timestamps are git author dates. Deliberately NOT file mtimes: a checkout rewrit
 those, which is the same reason state.json exists at all.
 
 Usage:
-  history.py [--json] [--full] [--author NAME] [--limit N]
+  history.py [--markdown] [--json] [--full] [--author NAME] [--limit N]
+
+--markdown emits one section per work item instead of the fixed-width table. The
+table has to fit a terminal, so it clips every field to a column width and cannot
+carry a prompt at all; sections have room to quote one as it was written.
 
 Exit: 0 fine, 2 could not run.
 """
@@ -78,6 +84,40 @@ def section(text, heading):
             continue
         para.append(line.strip())
     return ' '.join(para)
+
+
+def block(text, heading):
+    """Everything under '## <heading>' up to the next heading, verbatim.
+
+    section() flattens the first paragraph into one line, which is right for an
+    Intent in a table cell and wrong for a prompt. A request written as a list, or
+    across paragraphs, is a different request once it has been run together — and
+    the whole point of recording one is that it is what the user actually said.
+    """
+    match = re.search(r'^##\s+' + re.escape(heading) + r'\s*$', text, re.M)
+    if not match:
+        return ''
+    out = []
+    for line in text[match.end():].lstrip('\n').split('\n'):
+        if line.startswith('#'):
+            break
+        out.append(line.rstrip())
+    while out and not out[-1].strip():
+        out.pop()
+    return '\n'.join(out)
+
+
+def quote(text):
+    """Render as a markdown blockquote, without double-quoting one already in it."""
+    lines = []
+    for line in text.split('\n'):
+        if not line.strip():
+            lines.append('>')
+        elif line.lstrip().startswith('>'):
+            lines.append(line)
+        else:
+            lines.append('> ' + line)
+    return '\n'.join(lines)
 
 
 def origin(plan_path):
@@ -233,6 +273,7 @@ def collect():
             'slug': slug,
             'title': title.group(1) if title else slug,
             'intent': section(plan, 'Intent'),
+            'prompt': block(plan, 'Prompt'),
             'status': status.group(1).strip() if status else '',
             'stage': state.get('stage', ''),
             'outcome': verdict.get('outcome', ''),
@@ -328,8 +369,92 @@ def render(items, full):
         print('* marks a draft request.')
 
 
+def render_markdown(items, full):
+    """One section per work item, oldest first.
+
+    Everything the table clips gets its full width back here, which is the only
+    reason this exists: a prompt cannot survive a 30-column cell. Intent is always
+    included rather than hidden behind --full, because the constraint --full
+    answers to is horizontal space and a section has none.
+    """
+    print('# Work history')
+    print('')
+
+    if not items:
+        print('No work items. `docs/work/` is empty or absent \u2014 nothing has been '
+              'planned yet.')
+        return
+
+    print('%d work item(s), oldest first.' % len(items))
+
+    for number, item in enumerate(items, 1):
+        print('')
+        print('## %d. %s' % (number, item['slug']))
+        print('')
+        if item['title'] and item['title'] != item['slug']:
+            print('*%s*' % item['title'])
+            print('')
+
+        planned = '**Planned** ' + (item['planned'][:10] or '(uncommitted)')
+        if item['author']:
+            planned += ' by ' + item['author']
+        facts = [planned]
+        stage = item['stage'] or item['status']
+        if stage:
+            facts.append('**' + stage + '**')
+        label = pr_label(item['pr'])
+        if label != '\u2014':
+            facts.append('PR ' + label + (' (draft)' if item['pr'].get('draft') else ''))
+        took = humanise(item['elapsed']['seconds'])
+        if took:
+            facts.append('took ' + took)
+        print(' \u00b7 '.join(facts))
+
+        notes = []
+        if item['pr'].get('url'):
+            notes.append(item['pr']['url'])
+        elif item['pr'].get('source') == 'merge commit':
+            notes.append('Request number inferred from the merge commit, not recorded '
+                         'in `state.json` \u2014 treat it as a lead.')
+        if item['agents']:
+            notes.append('Built with ' + ', '.join(item['agents']) + '.')
+        if not item['committed']:
+            notes.append('Not committed yet, so nothing records who planned it.')
+        if notes:
+            print('')
+            for note in notes:
+                print(note + '  ')
+
+        print('')
+        print('### Prompt')
+        print('')
+        if item['prompt']:
+            print(quote(item['prompt']))
+        else:
+            print('*Not recorded.* This item was planned before `1-plan` began '
+                  'keeping the request, and it cannot be recovered from the '
+                  'repository \u2014 nothing ever wrote it down.')
+
+        if item['intent']:
+            print('')
+            print('### Intent')
+            print('')
+            print(item['intent'])
+
+    missing = [i for i in items if not i['prompt']]
+    if missing and len(missing) != len(items):
+        print('')
+        print('---')
+        print('')
+        print('%d of %d items have no recorded prompt: %s'
+              % (len(missing), len(items), ', '.join(i['slug'] for i in missing)))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--markdown', action='store_true',
+                        help='one section per work item, with the prompt, instead '
+                             'of the table')
     parser.add_argument('--json', action='store_true')
     parser.add_argument('--full', action='store_true', help='include each plan\'s Intent')
     parser.add_argument('--author', help='only items planned by an author matching this')
@@ -351,6 +476,8 @@ def main():
 
     if opts.json:
         print(json.dumps(items, indent=2))
+    elif opts.markdown:
+        render_markdown(items, opts.full)
     else:
         render(items, opts.full)
     return 0

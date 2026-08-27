@@ -822,6 +822,64 @@ def test_history():
               code == 0 and 'An earlier change' in out and 'Plan: demo' not in out
               and 'demo' not in out.split('\n')[2] if len(out.split('\n')) > 2 else False,
               out[:200])
+
+        # --- the prompt that produced the plan ----------------------------
+        # Recorded verbatim or not at all. A prompt flattened into one line is a
+        # different prompt, and one reconstructed from the Intent is not a
+        # record — it reads as evidence and is not.
+        write(repo, 'docs/work/asked/plan.md', PLAN.replace('# Plan: demo\n', '\n'.join([
+            '# Plan: A change somebody asked for',
+            '',
+            '## Prompt',
+            '',
+            'make the widget retry',
+            '',
+            '- three times, not once',
+            '- surface the last error',
+            '',
+        ])))
+        commit_as('Ada Lovelace', 'ada@example.com', '2023-01-01T09:00:00+00:00',
+                  'plan a change somebody asked for')
+
+        code, out, _ = run(['python3', HISTORY, '--json'], cwd=repo)
+        items = dict((i['slug'], i) for i in json.loads(out))
+        check('history reads the prompt verbatim, keeping its line breaks',
+              items.get('asked', {}).get('prompt', '').split('\n')
+              == ['make the widget retry', '', '- three times, not once',
+                  '- surface the last error'],
+              'got %r' % items.get('asked', {}).get('prompt'))
+        check('history records no prompt where the plan has no Prompt section',
+              items.get('demo', {}).get('prompt') == '',
+              'got %r' % items.get('demo', {}).get('prompt'))
+
+        code, out, _ = run(['python3', HISTORY, '--markdown'], cwd=repo)
+        check('markdown gives every item its own section',
+              out.count('\n## ') == len(items),
+              'got %d sections for %d items' % (out.count('\n## '), len(items)))
+        check('markdown quotes the prompt as it was written',
+              '> make the widget retry' in out and '> - three times, not once' in out,
+              out[:600])
+        check('markdown says so when no prompt was recorded',
+              '*Not recorded.*' in out, out[:600])
+        check('markdown never fabricates a prompt from the intent',
+              '> Make the widget retry.' not in out, out[:600])
+        check('markdown counts the items with no recorded prompt',
+              'have no recorded prompt' in out, out[-400:])
+
+        # A request that arrived as a quotation is not quoted a second time.
+        write(repo, 'docs/work/quoted/plan.md', PLAN.replace('# Plan: demo\n', '\n'.join([
+            '# Plan: A quoted prompt', '', '## Prompt', '', '> already a quote', ''])))
+        commit_as('Ada Lovelace', 'ada@example.com', '2024-01-01T09:00:00+00:00',
+                  'plan a quoted prompt')
+
+        code, out, _ = run(['python3', HISTORY, '--markdown'], cwd=repo)
+        check('markdown does not double-quote a prompt that is already a quotation',
+              '> already a quote' in out and '> > already a quote' not in out,
+              out[:800])
+
+        code, out, _ = run(['python3', HISTORY], cwd=repo)
+        check('the table carries no prompt, which is the reason --markdown exists',
+              code == 0 and 'three times, not once' not in out, out[:400])
     finally:
         shutil.rmtree(repo, ignore_errors=True)
 

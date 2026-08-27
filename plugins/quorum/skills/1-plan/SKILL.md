@@ -217,11 +217,17 @@ question.
 
 ## Two kinds of statement
 
-A plan contains two things that look alike on the page and are not alike at all:
+A plan contains three things that look alike on the page and are not alike at all:
 
 - **Requirements** — *Intent*, *Acceptance criteria*, *Non-goals*. These are
   authoritative. They are what the user wants, and every later step is measured
   against them. Nobody may edit them but the user.
+- **The record** — *Prompt*. Not a requirement and not a claim: it is what the
+  user asked for, in the words they asked it in. It is never edited, never acted
+  on directly, and never measured against — *Intent* and *Acceptance criteria* are
+  what the pipeline judges. It exists so that a plan can be checked against the
+  request that produced it, which is the one comparison nothing else in the
+  pipeline can make once the plan is written.
 - **Claims** — everything in *Approach*, including any diagram. These are
   assertions **about the repository** that you believe while writing the plan:
   that a function exists, that a pattern is followed, that a change is confined to
@@ -240,6 +246,16 @@ turns out to be false is a finding rather than a surprise.
 - **Slug:** <slug>
 - **Branch:** <branch>
 - **Status:** planned
+
+## Prompt
+
+The user's own words, verbatim — the request that produced this plan, copied
+without tidying, summarising, or correcting. Where they pointed at a file, name
+the path and quote its contents. Where the request arrived across several
+messages, include the ones that shaped the plan.
+
+Leave it out entirely rather than reconstructing one. An invented request is worse
+than a missing one: it reads as a record and is not.
 
 ## Intent
 
@@ -378,3 +394,6 @@ in full and why an unanswered *Open question* stops the offer outright.
 - Every acceptance criterion must be falsifiable. If you cannot describe how it
   would be observed failing, it is not an acceptance criterion — rewrite it.
 - Do not pad the plan. A three-line change gets a short plan.
+- *Prompt* is copied, never composed. It is outside `requirementsHash` by
+  design — it is a record of what was asked, not a statement of what is owed —
+  so nothing downstream checks it, and a paraphrase there would never be caught.
