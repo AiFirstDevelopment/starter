@@ -388,8 +388,9 @@ An unattended pipeline must fail cleanly rather than grind or paper over:
 **A run that ends `blocked` with a clear reason is this pipeline working.** The
 failure mode it exists to prevent is a green suite bought by deleting a test.
 
-For how this compares to PR review bots and autonomous coding agents — and where
-it is still weaker than it sounds — see [docs/comparison.md](docs/comparison.md).
+For how this compares to the spec-driven development tools, PR review bots, and
+autonomous coding agents — and where it is still weaker than it sounds — see
+[docs/comparison.md](docs/comparison.md).
 
 ## Making successive changes
 
@@ -690,8 +691,34 @@ flowchart TD
 
 **It is safe on `main` because it writes no code.** It proposes and never fixes,
 so there is nothing an approval gate would be protecting: no branch, no commit,
-no push, and `docs/audit/` is the only path `git status` shows afterwards. The
-audited repository needs no `plan.md`, no branch, and nothing under `docs/work/`.
+no push, and `docs/audit/` is the only path `git status --porcelain -uall` shows
+afterwards. The audited repository needs no `plan.md`, no branch, and nothing
+under `docs/work/`.
+
+**Be precise about which half of that is mechanical**, because the difference is
+the whole safety argument. The auditors are granted `Read`, `Grep` and `Glob` and
+no shell, so they cannot edit the repository, commit, push, or run its test suite
+however they are prompted — and `selftest.py` asserts that grant, so it survives
+someone editing the agent without reading this. That matters because the audited
+repository is *untrusted input*: a README carrying instructions aimed at the agent
+reading it cannot be obeyed if the tools are not there.
+
+The skill's own session is **not** covered by that. It holds a shell, it reads the
+spec out of the audited repository, and it is bound by prose. Hardening that path
+is open work, and the criterion says so rather than claiming the stronger
+guarantee.
+
+**It needs a client that registers a Workflow tool.** The orchestration lives in
+`workflow/audit.js` and is reached only that way. Older Claude Code releases do
+not have one — `2.1.19` does not; `2.1.246` does — and on a client without it the
+command **stops and says so**. It does not improvise. That refusal exists because
+the first version did improvise: it audited the repository from the skill's own
+session and wrote a `report.md` asserting refutation passes that never ran, which
+`--verify` happily accepted. If you hit the stop, upgrade:
+
+```bash
+npm i -g @anthropic-ai/claude-code
+```
 
 Every criterion ends with exactly one of three statuses, and none may be omitted
 — a criterion missing from a report reads exactly like one that passed.
