@@ -10,7 +10,7 @@ So the criteria list is hashed when it is written, and the report cites the hash
 it was audited against. Three values have to agree: what `criteria.md` contains
 now, what `criteria.md` says it contained, and what `report.md` says it measured.
 
-  audit.py --check-slug - <<'S'                    # safe as a directory name?
+  audit.py --check-slug-file PATH                  # safe as a directory name?
   <slug>
   S
   audit.py --hash docs/audit/<slug>/criteria.md    # the hash of the criteria list
@@ -186,8 +186,26 @@ def verify(work_dir, expect_report=False):
     return (1 if result['violations'] else 0), result
 
 
+def report_slug(slug):
+    """0 if the candidate is safe as a directory name, 2 with a reason if not."""
+    if SLUG.fullmatch(slug):
+        return 0
+    sys.stderr.write(
+        'audit: %r cannot be used as a slug.\n\n'
+        'It names a directory under docs/audit/ and is pasted into a path before\n'
+        'anything is written, so it must be lowercase alphanumeric words joined by\n'
+        'single hyphens: no slashes, no "..", no leading or trailing hyphen, no\n'
+        'spaces, and no newlines. Nothing has been written. Pick a slug that names\n'
+        'the spec.\n'
+        % slug)
+    return 2
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--check-slug-file', metavar='PATH',
+                        help='read the candidate slug from PATH — the only form safe for a '
+                             'slug derived from the repository under audit')
     parser.add_argument('--check-slug', metavar='SLUG',
                         help='exit 0 if SLUG is safe as a directory name, 2 if it is not; '
                              '"-" reads the slug from stdin, which is how the skill passes it')
@@ -202,6 +220,34 @@ def main():
     if opts.version:
         print(VERSION)
         return 0
+
+    if opts.check_slug_file is not None:
+        # A file, not a shell word, and not a heredoc.
+        #
+        # The slug is derived from the repository under audit, which is untrusted
+        # input, and the caller is a model composing a shell command. Every route
+        # that puts those bytes into the command has failed in turn: a
+        # double-quoted argument lets bash expand $(...) and backticks before this
+        # validator runs, and a quoted heredoc — the previous fix — ends at the
+        # first line equal to its delimiter, so content carrying that word on a
+        # line of its own closes the heredoc and the rest is parsed as shell.
+        # Both defeats happen before Python starts, which makes the validator the
+        # thing that executes the payload.
+        #
+        # A path the skill chose itself carries no attacker-influenced bytes, so
+        # there is nothing for the shell to interpret. Newlines are rejected here
+        # rather than trimmed: a slug never contains one, and accepting the first
+        # line of a multi-line candidate is how a delimiter collision would have
+        # slipped through unnoticed.
+        if not os.path.exists(opts.check_slug_file):
+            sys.stderr.write('audit: no such slug file: %s\n' % opts.check_slug_file)
+            return 2
+        raw = read(opts.check_slug_file)
+        if raw.endswith('\n'):
+            raw = raw[:-1]
+        if raw.endswith('\r'):
+            raw = raw[:-1]
+        return report_slug(raw)
 
     if opts.check_slug is not None:
         # "-" means stdin. The slug is derived from the repository under audit —
@@ -223,16 +269,7 @@ def main():
                 slug = slug[:-1]
         else:
             slug = opts.check_slug
-        if SLUG.fullmatch(slug):
-            return 0
-        sys.stderr.write(
-            'audit: %r cannot be used as a slug.\n\n'
-            'It names a directory under docs/audit/ and is pasted into a path before\n'
-            'anything is written, so it must be lowercase alphanumeric words joined by\n'
-            'single hyphens: no slashes, no "..", no leading or trailing hyphen, no\n'
-            'spaces. Nothing has been written. Pick a slug that names the spec.\n'
-            % slug)
-        return 2
+        return report_slug(slug)
 
     if opts.hash:
         if not os.path.exists(opts.hash):

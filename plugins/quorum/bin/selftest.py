@@ -1230,6 +1230,46 @@ def test_audit():
         code, _, _ = run(['python3', AUDIT, '--check-slug', '-'], stdin=b'widget-api\n\n')
         check('only the delimiter newline is stripped from stdin', code == 2)
 
+        # --check-slug-file is the form the skill actually uses, and the reason it
+        # exists is that both earlier forms were defeated by the same class of
+        # attack: untrusted repository bytes reaching bash before audit.py runs.
+        # A quoted heredoc ended at the first line equal to its delimiter, so a
+        # candidate carrying that word on its own line closed the heredoc and the
+        # rest was parsed as shell. Trimming to the first line would have hidden
+        # exactly that, which is why an embedded newline is a rejection and not a
+        # trim.
+        candidate = os.path.join(work, 'cand')
+
+        def check_slug_file(raw):
+            with open(candidate, 'wb') as handle:
+                handle.write(raw)
+            return run(['python3', AUDIT, '--check-slug-file', candidate])[0]
+
+        check('a slug in a file is accepted', check_slug_file(b'widget-api\n') == 0)
+        check('one trailing newline is tolerated in a slug file',
+              check_slug_file(b'widget-api') == 0)
+        check('a traversal in a slug file is rejected',
+              check_slug_file(b'../../etc\n') == 2)
+        check('a heredoc-delimiter collision payload is rejected, not truncated',
+              check_slug_file(b'widget-api\nSLUG\ntouch INJECTED\n') == 2,
+              'a multi-line candidate must fail rather than validate its first line')
+        check('command substitution in a slug file is rejected',
+              check_slug_file(b'a$(id)b\n') == 2)
+        check('a backtick payload in a slug file is rejected',
+              check_slug_file(b'a`id`b\n') == 2)
+        check('a missing slug file is an error, not a pass',
+              run(['python3', AUDIT, '--check-slug-file',
+                   os.path.join(work, 'nope')])[0] == 2)
+        os.remove(candidate)
+
+        # The skill is instructed to use the file form and never a shell word.
+        # If that instruction reverts to interpolating the slug, this fires.
+        with open(os.path.join(PLUGIN, 'skills', 'audit', 'SKILL.md')) as handle:
+            skill = handle.read()
+        check('the audit skill checks the slug from a file, not the shell',
+              '--check-slug-file' in skill and "--check-slug -" not in skill,
+              'a slug in a shell word or heredoc reaches bash before audit.py')
+
         # Rejection must write nothing. The whole point of running this before
         # criteria.md is that a bad slug costs the target repository nothing.
         before = sorted(os.listdir(work))

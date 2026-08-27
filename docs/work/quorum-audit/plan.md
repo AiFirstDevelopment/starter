@@ -58,6 +58,25 @@ and after the AC10/AC11 change at 10:47:15. No later step may re-record it, and
 none has: the hash standing in `state.json` is the one `1-plan` wrote, and both
 `/quorum:3-review` and `/quorum:4-quorum` are measured against it.
 
+Round 2 escalated once more, settled under the same delegation:
+
+- **AC11** narrowed to what `selftest.py` actually proves (round 2 verdict, E1,
+  option a). Its previous wording claimed a mechanical guarantee over *any* agent
+  reading the audited repository; the `audit` skill's own session holds a shell
+  and is not covered. That stronger claim was mine, written one amendment
+  earlier, and it overshot what the architecture delivers.
+
+**Round 2's E2 is answered, and it is not a design problem.** `/quorum:audit`
+reaches `workflow/audit.js` only through the Workflow tool, and the behavior lens
+found the installed CLI registers none — so the skill improvised and wrote a
+report describing passes that never ran. The cause is a stale client, not the
+architecture. `claude` on this machine is **2.1.19**, with no Workflow tool (zero
+references in `cli.js`); the VSCode extension bundles **2.1.246**, which has one;
+the current published version is 2.1.247. Upgrading restores the designed path.
+The hard stop the judge added stays regardless — a client that cannot run the
+orchestration must refuse rather than improvise, and that is what made this
+visible at all.
+
 ## Intent
 
 Point the quorum discipline at a repository that never used it. Given a spec —
@@ -116,11 +135,14 @@ nothing that can damage `main`.
       edit it.
 - [ ] AC11: The audit never executes code belonging to the repository under audit
       — not its application, not its build, not its test suite, not a script it
-      ships. No agent that reads the audited repository holds a shell, so this is
-      a property of the tool grants rather than of the prompts, and
-      `selftest.py` asserts it. A criterion that could only be settled by running
-      the software is reported `unverified` with that as the reason, never `gap` —
-      absence of runtime evidence is not evidence of absence.
+      ships. **No agent named by `workflow/audit.js` holds a shell**, and
+      `selftest.py` asserts that — which is the part that is mechanical. The
+      `audit` skill's own session is not covered by it: that session holds a
+      shell, reads the spec out of the audited repository, and is bound by prose
+      alone. Say which half is which rather than claiming the stronger one. A
+      criterion that could only be settled by running the software is reported
+      `unverified` with that as the reason, never `gap` — absence of runtime
+      evidence is not evidence of absence.
 
 ## Non-goals
 
