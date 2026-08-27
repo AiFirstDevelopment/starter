@@ -29,6 +29,23 @@ three decisions taken at the questions below:
 - Scope is **skill + workflow + agent + docs**, plus a selftest check — not
   enforcement-layer wiring, and not a skill-only version without a workflow.
 
+After the first pipeline run came back `blocked`, the user delegated the escalated
+decisions: *"if it comes back draft then deal with it right away and don't ask me
+questions, just make good judgement calls."* Two requirements moved under that
+delegation, both settling escalations the judge raised and could not decide:
+
+- **AC10** reworded to the property actually worth protecting (verdict E1, option
+  a). It previously forbade `audit.js` naming any agent granted a file-editing
+  tool, which the plan's own *Approach* made unsatisfiable by requiring it to name
+  `quorum-scribe`.
+- **AC11** tightened from a promise about how a shell is used into a statement
+  about what the agents are granted (verdict E3). `quorum-auditor` no longer holds
+  `Bash`, so the criterion is now mechanically checked rather than prompted.
+
+`requirementsHash` was re-recorded at that point, by `1-plan`'s rule that the
+baseline is written when the requirements are final. No later step may re-record
+it, and none has.
+
 ## Intent
 
 Point the quorum discipline at a repository that never used it. Given a spec —
@@ -49,8 +66,11 @@ nothing that can damage `main`.
 
 - [ ] AC1: When `/quorum:audit` runs to completion on `main` in a repository with
       no quorum artifacts, it creates no branch, switches no branch, makes no
-      commit, and `git status --porcelain` afterwards lists changed paths only
-      under `docs/audit/`.
+      commit, and `git status --porcelain -uall` afterwards lists changed paths
+      only under `docs/audit/`. (`-uall` because git collapses a wholly-untracked
+      directory to its top level, so plain `--porcelain` reports `?? docs/` in a
+      target that had no `docs/` — the ordinary case — which cannot be
+      distinguished from a stray write.)
 - [ ] AC2: `/quorum:audit <free text>` and `/quorum:audit <path/to/spec.md>` both
       produce `docs/audit/<slug>/criteria.md`. Given an argument that looks like a
       path but names no existing file, the command says so and writes nothing,
@@ -80,13 +100,15 @@ nothing that can damage `main`.
       `/quorum:1-plan` invocation that takes the report as its input.
 - [ ] AC10: `python3 plugins/quorum/bin/selftest.py` exits 0, and fails when
       `workflow/audit.js` names an agent that does not register under exactly that
-      name, or names an agent whose definition grants a file-editing tool.
+      name, or names an agent that can both read the repository under audit and
+      edit it.
 - [ ] AC11: The audit never executes code belonging to the repository under audit
       — not its application, not its build, not its test suite, not a script it
-      ships. The shell is used only to search and read. A criterion that could
-      only be settled by running the software is reported `unverified` with that
-      as the reason, never `gap` — absence of runtime evidence is not evidence of
-      absence.
+      ships. No agent that reads the audited repository holds a shell, so this is
+      a property of the tool grants rather than of the prompts, and
+      `selftest.py` asserts it. A criterion that could only be settled by running
+      the software is reported `unverified` with that as the reason, never `gap` —
+      absence of runtime evidence is not evidence of absence.
 
 ## Non-goals
 

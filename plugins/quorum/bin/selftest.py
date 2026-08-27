@@ -45,11 +45,12 @@ MANIFEST = os.path.join(PLUGIN, '.claude-plugin', 'plugin.json')
 AGENTS_DIR = os.path.join(PLUGIN, 'agents')
 WORKFLOW_DIR = os.path.join(PLUGIN, 'workflow')
 
-# Scripts whose agents must not be *granted* a way to edit the repository they run
-# against. Granted is the operative word: Bash is counted as a read tool below,
-# and a shell can edit a file, so this raises the floor rather than closing the
-# door. Closing it means taking Bash away from the auditor, which is a decision
-# recorded in docs/work/quorum-audit/verdict.md, not one this file can make.
+# Scripts whose agents must not be granted a way to touch the repository they run
+# against — neither to edit it nor to execute it. /quorum:audit runs on the default
+# branch of a production repository that never asked for this pipeline, and the
+# reason that is safe has to be a property of the tool grants: the audited
+# repository is untrusted input, so a rule an agent is merely asked to follow can
+# be argued out of it by a README it reads.
 READ_ONLY_WORKFLOWS = ['audit.js']
 
 # quorum-scribe grants Write and nothing else: it writes the audit report and
@@ -61,6 +62,13 @@ WRITE_ONLY_EXEMPT = ['quorum-scribe']
 
 WRITE_TOOLS = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit']
 READ_TOOLS = ['Read', 'Grep', 'Glob', 'Bash', 'NotebookRead']
+
+# Tools that can run the audited repository. A shell is the whole list, and it is
+# kept separate from WRITE_TOOLS because the two fail differently: a write tool
+# edits a file, while a shell can edit it, commit it, push it, and run the test
+# suite and the application besides. Bash appears in READ_TOOLS as well — a shell
+# genuinely can read — and the two memberships answer different questions.
+EXEC_TOOLS = ['Bash']
 
 PLAN = """# Plan: demo
 
@@ -1357,12 +1365,15 @@ def test_agents():
               '%s defines it, no script under workflow/ ever calls it' % declared[name])
 
     # workflow/audit.js runs against a repository that never asked for this
-    # pipeline, on its default branch. No agent it names may be *granted* a
-    # file-editing tool: that much is a property of the agent definitions rather
-    # than of the prompts, so it is settled here instead of being promised in
-    # prose. It is a floor, not the whole guarantee — quorum-auditor holds Bash,
-    # and nothing here stops a shell from writing. Do not read a pass as proof
-    # that the audited repository cannot be touched.
+    # pipeline, on its default branch. Two properties make that safe, and both are
+    # settled here rather than promised in prose: no agent it names is granted a
+    # file-editing tool, and no agent it names is granted a shell. The second one
+    # is what closes the door — a shell can edit, commit, push, and run a test
+    # suite, so without it the first check is only a floor.
+    #
+    # The audited repository is untrusted input. An agent reading a README that
+    # carries instructions aimed at it cannot act on them if the tools are not
+    # there, which is the difference between this and asking it not to.
     for entry in sorted(READ_ONLY_WORKFLOWS):
         check('%s exists to be checked' % entry,
               os.path.exists(os.path.join(WORKFLOW_DIR, entry)),
@@ -1379,6 +1390,11 @@ def test_agents():
                 continue
             writes = sorted(t for t in tools if t in WRITE_TOOLS)
             reads = sorted(t for t in tools if t in READ_TOOLS)
+            execs = sorted(t for t in tools if t in EXEC_TOOLS)
+            check('%s: %s cannot execute the audited repository' % (entry, name),
+                  not execs,
+                  'grants %s — a shell can edit a file, commit, push, and run the test '
+                  'suite, which defeats every prose rule in the prompts at once' % execs)
             if name in WRITE_ONLY_EXEMPT:
                 # The exemption is itself checked, so it cannot be widened by
                 # quietly granting the scribe a way to read what it overwrites.

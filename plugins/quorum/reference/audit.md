@@ -39,13 +39,22 @@ pipeline's contract does it.
 ## What may be written
 
 **`docs/audit/<slug>/` and nothing else.** No source file, no test, no config, no
-commit, no branch, no push. After a complete run, `git status --porcelain` lists
-changed paths under `docs/audit/` and nothing anywhere else — that is the
+commit, no branch, no push. After a complete run, `git status --porcelain -uall`
+lists changed paths under `docs/audit/` and nothing anywhere else — that is the
 property the whole design rests on, and it is what makes running on `main` safe.
 
+Use `-uall`. Git collapses a wholly-untracked directory to its top level, so a
+target that had no `docs/` — the ordinary case, since an audit target by
+definition never used this pipeline — reports only `?? docs/` under plain
+`--porcelain`. That cannot be told apart from a stray write, and it hides which
+files were created, so the check stops proving the thing it is there to prove.
+
 The audit also never **executes** the repository under audit: not its
-application, not its build, not its test suite, not a script it ships. The shell
-is for searching and reading. A criterion that could only be settled by running
+application, not its build, not its test suite, not a script it ships. This is a
+property of the tool grants rather than of the prompts — the agents that read the
+audited repository hold `Read`, `Grep` and `Glob` and no shell, and `selftest.py`
+asserts it — so it holds even against a repository whose files carry instructions
+aimed at the agent reading them. A criterion that could only be settled by running
 the software is `unverified`, never `gap`.
 
 ## The status vocabulary

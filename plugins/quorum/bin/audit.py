@@ -10,6 +10,7 @@ So the criteria list is hashed when it is written, and the report cites the hash
 it was audited against. Three values have to agree: what `criteria.md` contains
 now, what `criteria.md` says it contained, and what `report.md` says it measured.
 
+  audit.py --check-slug <slug>                     # safe as a directory name?
   audit.py --hash docs/audit/<slug>/criteria.md    # the hash of the criteria list
   audit.py --verify docs/audit/<slug> [--json]     # all three agree?
   audit.py --verify <dir> --expect-report          # ...and a report exists at all
@@ -34,6 +35,15 @@ import sys
 # audit written before that point then has a hash that no longer recomputes,
 # which is a migration, not a release note.
 VERSION = '1'
+
+# A slug names a directory under docs/audit/, and the skill interpolates it into
+# a path before anything else runs. audit.js validates its own copy, but criteria.md
+# is written earlier, by the skill, outside that script — so a slug carrying ".."
+# escaped the audit directory before the check was ever reached, and the skill's
+# own "git status is clean" verification could not see a file written outside the
+# working tree. Prose told the skill to use kebab-case; prose is what a model can
+# talk itself out of. Same pattern as audit.js, deliberately.
+SLUG = re.compile(r'^[a-z0-9]+(-[a-z0-9]+)*$')
 
 CRITERIA_HEADING = 'Criteria'
 HASH_FIELD = 'Criteria hash'
@@ -169,6 +179,8 @@ def verify(work_dir, expect_report=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--check-slug', metavar='SLUG',
+                        help='exit 0 if SLUG is safe as a directory name, 2 if it is not')
     parser.add_argument('--hash', metavar='CRITERIA')
     parser.add_argument('--verify', metavar='AUDIT_DIR')
     parser.add_argument('--json', action='store_true')
@@ -180,6 +192,18 @@ def main():
     if opts.version:
         print(VERSION)
         return 0
+
+    if opts.check_slug is not None:
+        if SLUG.match(opts.check_slug):
+            return 0
+        sys.stderr.write(
+            'audit: %r cannot be used as a slug.\n\n'
+            'It names a directory under docs/audit/ and is pasted into a path before\n'
+            'anything is written, so it must be lowercase alphanumeric words joined by\n'
+            'single hyphens: no slashes, no "..", no leading or trailing hyphen, no\n'
+            'spaces. Nothing has been written. Pick a slug that names the spec.\n'
+            % opts.check_slug)
+        return 2
 
     if opts.hash:
         if not os.path.exists(opts.hash):

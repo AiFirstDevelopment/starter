@@ -23,10 +23,14 @@ nothing that can damage `main`:
 - It creates no branch and switches no branch.
 - It makes no commit and no push.
 - It writes `docs/audit/<slug>/` and nothing else. When the run is done,
-  `git status --porcelain` lists changed paths under `docs/audit/` and nowhere
-  else. **Check that at the end and say so.**
+  `git status --porcelain -uall` lists changed paths under `docs/audit/` and
+  nowhere else. **Check that at the end and say so** — and use `-uall`, for the
+  reason given at Step 6.
 - It never executes the repository under audit — not its application, not its
-  build, not its test suite, not a script it ships. The shell searches and reads.
+  build, not its test suite, not a script it ships. The auditing agents hold no
+  shell at all, so this is a property of their tool grants rather than a rule they
+  are asked to follow. Your own shell, in this skill, is for `git status` and
+  `bin/audit.py` — not for the repository you are measuring.
 
 That last one costs something and you say so rather than hiding it: this command
 can tell you the code **appears** to implement a requirement; it cannot tell you
@@ -71,6 +75,20 @@ free text. Decide, and **do not guess quietly**:
 Slug, per `reference/audit.md`: an explicit argument, else the spec file's
 basename, else two to four kebab-case words naming the spec's subject. It is
 never derived from the branch — this runs on `main` on purpose.
+
+**Validate it before it reaches a path.** The slug is pasted into
+`docs/audit/<slug>/` and written to before `audit.js` — which validates its own
+copy — ever runs, so a slug carrying `..` escapes the audit directory while the
+`git status` check in Step 6 still reports clean, because it cannot see a file
+written outside the working tree:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/bin/audit.py" --check-slug "<slug>"
+```
+
+Non-zero means stop and pick another slug. Do not write anything first, and do
+not decide for yourself that a particular odd slug is harmless — that judgment is
+what the check exists to remove.
 
 If `docs/audit/<slug>/` already exists, say what is in it and that you are about
 to overwrite it. A previous audit of a different spec keeps its own directory.
@@ -225,8 +243,16 @@ on `main`, and the operator has to hear it before they hear a single result.
 Then confirm nothing outside the audit directory moved:
 
 ```bash
-git status --porcelain
+git status --porcelain -uall
 ```
+
+**`-uall` is load-bearing, not a flourish.** Git collapses a wholly-untracked
+directory to its top level, so in a repository that had no `docs/` before — the
+ordinary case for an audit target, which by definition never used this pipeline —
+plain `--porcelain` prints `?? docs/` and nothing more. That is indistinguishable
+from a stray write into `docs/` and it hides which files were actually created,
+so the check that is supposed to prove AC1 quietly stops proving it. `-uall`
+expands the directory and lists the files.
 
 Every listed path must be under `docs/audit/`. If anything else changed, say so
 plainly — it is a defect in this command, not a detail.

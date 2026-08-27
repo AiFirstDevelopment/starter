@@ -2,12 +2,12 @@
   "slug": "quorum-audit",
   "branch": "feature/quorum-audit",
   "stage": "published",
-  "updated": "2026-08-27T10:52:00Z",
+  "updated": "2026-08-27T10:51:46Z",
   "plan": {
     "acs": 11,
     "steps": 7,
     "open": 0,
-    "requirementsHash": "741f329d1fb81de354a064b9eac44534a9c79fcdde2d1895ccba72399300d9dc"
+    "requirementsHash": "979e198e93822b7aa256f722283ed98c872aa203d28b3671a75200b5c4fdfcb0"
   },
   "build": {
     "stepsDone": 7,
@@ -40,15 +40,6 @@
     "escalations": 5,
     "head": "d271ce6"
   },
-  "recheck": {
-    "findings": 2,
-    "blockers": 0
-  },
-  "guard": {
-    "clean": true,
-    "violations": 0,
-    "gate": "unknown"
-  },
   "pr": {
     "url": "https://github.com/AiFirstDevelopment/starter/pull/1",
     "draft": true
@@ -63,6 +54,17 @@
     "2026-08-27T09:51:58Z 2-build built 7/7, 6 deviations (2 PLAN DEFECT), suite green 207/207",
     "2026-08-27T10:05:24Z panel complete, adjudication started",
     "2026-08-27T10:26:31Z 4-quorum adjudicated blocked \u2014 13 accepted, 0 rejected, 5 escalations, 10 ACs unmet, suite green 233/233",
-    "2026-08-27T10:52:00Z published draft PR #1 \u2014 blocked; guard clean 0 violations, gate unknown (branch protection unreadable without admin)"
-  ]
+    "2026-08-27T10:52:00Z published draft PR #1 \u2014 blocked; guard clean 0 violations, gate unknown (branch protection unreadable without admin)",
+    "2026-08-27T10:47:15Z 1-plan amended under delegated authority: AC10 reworded (E1), AC11 made mechanical (E3)",
+    "2026-08-27T10:51:46Z 1-plan amended: AC1 specifies git status -uall, found by running the command against the fixture"
+  ],
+  "recheck": {
+    "findings": 2,
+    "blockers": 0
+  },
+  "guard": {
+    "clean": true,
+    "violations": 0,
+    "gate": "unknown"
+  }
 }

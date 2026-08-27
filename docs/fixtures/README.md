@@ -74,7 +74,7 @@ and this is what makes that checkable.
 ### And of the run itself
 
 - No branch created, no branch switched, no commit made.
-- `git status --porcelain` in the audited copy lists paths under `docs/audit/`
+- `git status --porcelain -uall` in the audited copy lists paths under `docs/audit/`
   and nothing else.
 - Given `spec.md`, criteria are derived and shown, and the run **stops** until
   confirmed: `criteria.md` on disk, no `report.md`, no auditor run.

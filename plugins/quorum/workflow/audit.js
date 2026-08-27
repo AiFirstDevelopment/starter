@@ -60,21 +60,26 @@ const REFUTE_MODEL = models.refute || 'sonnet'
 // plugin.json and agents/*.md, and additionally checks that no agent this script
 // names declares a file-editing tool.
 //
-// Be precise about what that second check buys, because it is easy to read as
-// more than it is: it settles that no agent here is *granted* Write or Edit. It
-// does not settle that no agent here can write. quorum-auditor holds Bash, and a
-// shell can edit a file, commit, and push. Between the declared grants and the
-// prompts below, only the grants are mechanical; NEVER_RUN is prose, and prose is
-// what a model can talk itself out of. Anything that raises the floor here has to
-// take Bash away or confine it — see the escalation in docs/work/quorum-audit/.
+// That check is load-bearing rather than a floor. No agent this script names is
+// granted a file-editing tool, and no agent that can read the audited repository
+// is granted a shell either: quorum-auditor holds Read, Grep and Glob and nothing
+// else, so it cannot edit a file, commit, push, or run a test suite however it is
+// prompted — or however it is instructed by something it reads in the repository
+// it is auditing, which is untrusted input. selftest.py asserts both properties,
+// so they survive someone editing this file or that agent without reading this.
+//
+// NEVER_RUN below is still prose, and prose is what a model can talk itself out
+// of. It stays because an agent that cannot see a shell should know why, and
+// because the "unverified, never gap" half of it is a judgment no tool grant can
+// make. It is no longer what keeps the audited repository safe.
 
 // Repeated into every prompt rather than stated once, because it is the single
 // constraint that makes this command safe to run against production code.
 const NEVER_RUN =
   'You must NOT execute anything belonging to the repository under audit — not ' +
   'its application, not its build, not its test suite, not a script it ships, not ' +
-  'an install step. The shell is for searching and reading only: grep, rg, find, ' +
-  'cat, sed -n, git log. This is not caution about scope; the target is production ' +
+  'an install step. You hold no shell at all — Read, Grep and Glob are the whole ' +
+  'grant, so this is settled rather than asked. The target is production ' +
   'code that may hold live credentials, migrate on boot, or consume from a real ' +
   'queue, and the rule is fixed rather than judged so that no agent has to decide ' +
   'whether launching is safe. A criterion that could only be settled by running ' +
