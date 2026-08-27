@@ -1,8 +1,8 @@
 {
   "slug": "quorum-audit",
   "branch": "feature/quorum-audit",
-  "stage": "adjudicated",
-  "updated": "2026-08-27T10:26:31Z",
+  "stage": "published",
+  "updated": "2026-08-27T10:52:00Z",
   "plan": {
     "acs": 11,
     "steps": 7,
@@ -40,6 +40,19 @@
     "escalations": 5,
     "head": "d271ce6"
   },
+  "recheck": {
+    "findings": 2,
+    "blockers": 0
+  },
+  "guard": {
+    "clean": true,
+    "violations": 0,
+    "gate": "unknown"
+  },
+  "pr": {
+    "url": "https://github.com/AiFirstDevelopment/starter/pull/1",
+    "draft": true
+  },
   "log": [
     "2026-08-27T09:26:58Z 1-plan planned 10 ACs, 7 steps, 0 open questions",
     "2026-08-27T09:30:12Z plan approved by user via 1-plan",
@@ -49,6 +62,7 @@
     "2026-08-27T09:33:33Z pipeline launched",
     "2026-08-27T09:51:58Z 2-build built 7/7, 6 deviations (2 PLAN DEFECT), suite green 207/207",
     "2026-08-27T10:05:24Z panel complete, adjudication started",
-    "2026-08-27T10:26:31Z 4-quorum adjudicated blocked \u2014 13 accepted, 0 rejected, 5 escalations, 10 ACs unmet, suite green 233/233"
+    "2026-08-27T10:26:31Z 4-quorum adjudicated blocked \u2014 13 accepted, 0 rejected, 5 escalations, 10 ACs unmet, suite green 233/233",
+    "2026-08-27T10:52:00Z published draft PR #1 \u2014 blocked; guard clean 0 violations, gate unknown (branch protection unreadable without admin)"
   ]
 }
