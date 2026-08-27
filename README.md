@@ -125,25 +125,22 @@ Omit `ref` to track the default branch and pick up improvements automatically.
 ```mermaid
 flowchart LR
     P["/quorum:1-plan"] --> G{"human<br/>approval"}
-    G --> B["build"]
-    B --> R1["correctness"]
-    B --> R2["spec-fidelity"]
-    B --> R3["security"]
-    B --> R4["simplicity"]
-    B --> R5["test-quality"]
-    R1 --> J["judge<br/><i>fix + verdict</i>"]
-    R2 --> J
-    R3 --> J
-    R4 --> J
-    R5 --> J
-    J --> PR["pull request<br/><i>opened automatically</i>"]
+    G --> R["/quorum:pipeline<br/><i>unattended, up to 13 agents</i>"]
+    R --> PR["pull request"]
+    PR --> Y{"you read it"}
+    Y -->|ready for review| M["merge"]
+    Y -->|draft| F["decide or fix,<br/>re-run on the branch"]
+    F --> R
 ```
 
-Everything from `build` rightward runs unattended inside `/quorum:pipeline`. The
-same steps are also available individually — `/quorum:2-build`,
-`/quorum:3-review`, `/quorum:4-quorum` — when you want to drive them by hand.
-`/quorum:status` reads the artifacts on disk and tells you which one you are due
-to run next.
+You are in this loop twice: once to approve the plan, once to read what came back.
+[Inside the run](#inside-the-run) is where all thirteen agents live.
+
+Everything between approval and the pull request runs unattended inside
+`/quorum:pipeline`. The same steps are also available individually —
+`/quorum:2-build`, `/quorum:3-review`, `/quorum:4-quorum` — when you want to drive
+them by hand. `/quorum:status` reads the artifacts on disk and tells you which one
+you are due to run next.
 
 **Every skill here is model-invocable**, so asking Claude to start the pipeline
 works rather than being refused. What guards the dangerous part is not who typed
@@ -151,11 +148,10 @@ the command but whether the work was authorized, which is a better question: the
 approval gate is inside `/quorum:pipeline`, and `2-build` and `4-quorum` — the two
 steps that write code — stop and ask when the plan's *Status* is still `planned`.
 
-That is a deliberate change from an earlier design where these were
-`disable-model-invocation: true`. The flag did prevent a spontaneous unattended
-run, but it also blocked "start the pipeline" from working when you asked for it,
-and it protected nothing the approval gate does not. Authorization is a property
-of the plan; typing is a property of the moment.
+Marking them `disable-model-invocation: true` would prevent a spontaneous
+unattended run, but it would equally block "start the pipeline" from working when
+you ask for it, and it protects nothing the approval gate does not. Authorization
+is a property of the plan; typing is a property of the moment.
 
 ## The artifact contract
 
@@ -222,6 +218,29 @@ and a failed run resumes instead of being re-paid for:
 
 Up to thirteen agents per run.
 
+### Inside the run
+
+```mermaid
+flowchart LR
+    B["build"] --> R1["behavior"]
+    B --> R2["correctness"]
+    B --> R3["spec-fidelity"]
+    B --> R4["security"]
+    B --> R5["simplicity"]
+    B --> R6["test-quality"]
+    R1 --> S["record<br/><i>verbatim to reviews/</i>"]
+    R2 --> S
+    R3 --> S
+    R4 --> S
+    R5 --> S
+    R6 --> S
+    S --> J["judge<br/><i>fix + verdict</i>"]
+    J --> RC["recheck<br/><i>different model, read-only</i>"]
+    RC --> PUB["publish<br/><i>guard runs here</i>"]
+    PUB -->|all clear| PR["pull request<br/><i>ready for review</i>"]
+    PUB -->|any one condition| DPR["draft pull request<br/><i>reason at the top of the body</i>"]
+```
+
 ### Watching it
 
 The workflow runs detached, so the session goes quiet after launch. Two views:
@@ -256,14 +275,47 @@ detects the host from the remote — `gh` for GitHub, `glab` for GitLab — and 
 neither is available it prints the title, body, and command rather than failing
 the run.
 
-- Verdict `ready` or `ready with follow-ups` → PR opened ready for review
-- Verdict `blocked` → **draft** PR, titled `[blocked]`, body leading with what is
-  failing
+#### How the draft flag is used
 
-A blocked run still opens a PR, because the work exists and someone needs to see
-it — it just isn't inviting a merge. The publisher never merges, never approves,
-never enables auto-merge, and never force-pushes. Re-running the pipeline on a
-branch **updates the existing PR** rather than opening a second.
+The pipeline never merges, never approves, and never enables auto-merge. **Draft
+versus ready is the entire vocabulary it has for its own result** — the one bit it
+can set that changes what happens next. So it is not decoration: a draft is the run
+saying *a human has to look at this before it goes anywhere*, and on GitHub it is a
+real gate rather than a label, since a draft cannot be merged.
+
+Four conditions produce a draft. **Any one of them is enough**, and they are
+checked independently:
+
+| Condition | What the body leads with |
+|---|---|
+| Regression suite red | what is failing, quoted — never presented as a qualified success |
+| Verdict `blocked` | what is unresolved; the title is prefixed `[blocked]` |
+| Recheck found blockers | the blockers in the judge's own adjudication commits, and that they are **unfixed on purpose** |
+| Guard violations | the violations verbatim — they are rules, not findings, and nothing at this stage may adjudicate them away |
+
+A PR opens **ready for review** only when all four are clear. Note that
+`ready with follow-ups` still opens ready: follow-ups are recorded work, not
+objections, and holding a clean change hostage to them would make the follow-up
+list a reason never to finish.
+
+**A failed run still publishes**, and that is the point of the arrangement. A run
+that ends without a PR is a run nobody hears about — the branch sits there and the
+next person to look is whoever eventually wonders what happened to it. Publishing a
+draft converts a silent failure into a visible one, with the reason at the top of
+the body and `verdict.md` in the repository for the reasoning behind it.
+
+The recheck case is the one worth understanding, because it looks like a bug. The
+verdict can be entirely clean and the PR still drafts, because the recheck reviewed
+**the judge's own commits** — the only code on the branch no lens ever saw. Those
+findings are deliberately left unfixed: fixing them would mean the judge grading
+its own repairs, and each repair would need its own review, which does not
+terminate. That draft is asking for a person, not another pass.
+
+**To clear a draft**, deal with what the body names and re-run the pipeline on the
+branch. It **updates the existing PR** rather than opening a second, and once the
+conditions clear it opens ready. Or mark it ready by hand, which is your call to
+make and not the pipeline's — it will not do it for you, and it never force-pushes
+or pushes to the default branch.
 
 ### Per branch, on demand — not per commit
 
@@ -299,9 +351,8 @@ through the only checkpoint in the system.
 
 `1-plan` asks at the end of writing a plan too, so the common path is one command:
 describe the change, read the criteria, approve, and the pipeline starts. There is
-no cooling-off rule. One was tried and removed as theatre — refusing to ask in the
-same breath bought a round trip and no reflection, since bare `/quorum:1-plan`
-approves in a keystroke anyway.
+no cooling-off rule: refusing to ask in the same breath would buy a round trip and
+no reflection, since bare `/quorum:1-plan` approves in a keystroke anyway.
 
 Two things carry the weight instead, and both are about **what the decision is
 taken from** rather than when. The acceptance criteria are shown in full rather
@@ -379,8 +430,9 @@ default, and starting a fresh branch off the base when the one you are standing 
 already carries a finished change. See
 [Making successive changes](#making-successive-changes).
 
-Captures **Intent**, **Acceptance criteria**, **Non-goals**, **Open questions**,
-**Approach**, **Steps**, and a **Test strategy**. Acceptance criteria are the
+Captures the **Prompt** that produced it, then **Intent**, **Acceptance
+criteria**, **Non-goals**, **Open questions**, **Approach**, **Steps**, and a
+**Test strategy**. Acceptance criteria are the
 load-bearing part — observable, falsifiable, checkable by someone who did not
 write the code, by operating the assembled application. "The service layer is
 refactored cleanly" is not a criterion; "when a user submits the form with an
@@ -405,7 +457,7 @@ its text alone, edges are labelled, and if the diagram and the prose disagree th
 plan is wrong somewhere and both get fixed. A three-line change gets no diagram —
 drawing one to look thorough is its own failure.
 
-**The plan holds two kinds of statement, and they are not equal.** *Intent*,
+**The plan holds three kinds of statement, and they are not equal.** *Intent*,
 *Acceptance criteria*, and *Non-goals* are **requirements** — authoritative, and
 nobody but you may edit them. Everything in *Approach*, diagrams included, is a
 **claim**: an assertion about the repository that the planner believed while
@@ -413,6 +465,13 @@ writing, like "`UserRepo` already exposes `findByEmail`". Claims can be false, a
 a false one misdirects the builder. So they are numbered, and verifying them is
 the spec-fidelity lens's defined job rather than something a reviewer might get to
 on initiative.
+
+*Prompt* is neither. It is the **record** — what you asked for, in the words you
+asked it in, copied rather than composed. Nothing measures code against it and
+nothing checks it, which is why it sits outside the requirements hash: a paraphrase
+there would never be caught. It is there so the plan can be read against the
+request that produced it, which is the one comparison nothing else in the pipeline
+can make once the plan is written.
 
 ### `/quorum:2-build`
 
@@ -539,7 +598,7 @@ Not a step — the answer to "where am I?". Reads `state.json`, the branch,
 `plan.md`, the `reviews/` directory, `verdict.md`, and the working tree, then
 names the state and the next command to run.
 
-Knowing where you stand means reading five things and knowing what their
+Knowing where you stand means reading six things and knowing what their
 combinations mean. This does that reading.
 
 **It leads with what completed, then with what is missing** — in that order,
@@ -567,29 +626,43 @@ status reports that as the state it is — naming that case is the whole point.
 
 ### `/quorum:history`
 
-Every change this repository has planned, oldest first — the title, who planned
-it, when, where it got to, and where to find its pull or merge request. Read-only.
+Every change this repository has planned, oldest first — the prompt that produced
+it, who planned it, when, where it got to, and where to find its pull or merge
+request. Read-only.
 
 `docs/work/` accumulates one directory per change and never loses one, so the
 record already exists; this reads it back rather than adding bookkeeping.
 
-Two columns are easy to misread, so they are worth stating plainly. **PLANNED** is
-the author date of the commit that first added `plan.md`, never a file mtime — a
-checkout rewrites mtimes, which is the reason `state.json` exists at all. **BY** is
-that commit's git author, which is whoever's git config made the commit rather
-than whoever decided the work should happen; in this pipeline the builder, judge,
-and publisher all commit under the repository owner's config, so on a solo repo
-it is one name repeated. Agent involvement is reported separately, from
-`Co-Authored-By` trailers, because the author field cannot carry it.
+**One section per work item, each quoting the plan's *Prompt* verbatim.** A prompt
+does not survive a table at any column width, which is why the sectioned form is
+what the skill runs and the fixed-width table is kept for a narrow terminal.
 
-The **PR** column prefers what the publisher recorded in `state.json`. Failing
+The prompt is a record, not a requirement: nothing downstream reads it and nothing
+checks it, so a plan whose *Intent* has drifted from its *Prompt* still passes
+every gate. Comparing the two is a job only a person does, at the approval gate,
+which is the last point where a dropped requirement is free to fix. A work item
+whose plan has no *Prompt* section says so rather than showing a reconstruction —
+an invented request reads as evidence and is not.
+
+Two fields are easy to misread. **Planned / by** is the author date and author of
+the commit that first added `plan.md`, never a file mtime — a checkout rewrites
+mtimes, which is the reason `state.json` exists at all. And it is whoever's git
+config made the commit rather than whoever decided the work should happen; in this
+pipeline the builder, judge, and publisher all commit under the repository owner's
+config, so on a solo repo it is one name repeated. Agent involvement is reported
+separately, from `Co-Authored-By` trailers, because the author field cannot carry
+it.
+
+The **PR** reference prefers what the publisher recorded in `state.json`. Failing
 that it infers one from the history — a squash merge's `(#12)`, a merge commit's
 `Merge pull request #12 from …`, or GitLab's `See merge request grp/proj!12` —
 and says which, because an inferred number is a lead and a recorded URL is a fact.
 
 ```bash
-history.py --full        # include each plan's Intent
+history.py --markdown    # sections, with each prompt — what the skill runs
+history.py               # the fixed-width table, for a narrow terminal
 history.py --author ada  # by author or email
+history.py --limit 10    # the ten most recent
 history.py --json        # for anything you want to compute over
 ```
 
@@ -765,9 +838,9 @@ quorum — a delivery pipeline:
                    pull request at the end. Plan approval is the only human gate.
   /quorum:status   Report which of those states this branch is in and the single
                    next command to run. Reads only; changes nothing.
-  /quorum:history  List every change this repo has planned, oldest first — what it
-                   was, who planned it, when, where it got to, and where to find
-                   its pull or merge request. Reads only.
+  /quorum:history  List every change this repo has planned, oldest first — the
+                   prompt that produced it, who planned it, when, where it got to,
+                   and where to find its pull or merge request. Reads only.
 
 tests — testing discipline:
   /tests:add       Behavioral tests against the fully assembled app through its
@@ -853,6 +926,7 @@ starter/
 │   │   │   ├── quorum-scribe.md
 │   │   │   ├── quorum-judge.md
 │   │   │   └── quorum-publisher.md
+│   │   ├── README.md             # the plugin's own reference
 │   │   ├── bin/                  # the enforcement layer — no model involved
 │   │   │   ├── guard.py          # the mechanical rules; vendored into CI
 │   │   │   ├── history.py        # every work item ever planned, from git
@@ -874,11 +948,14 @@ starter/
 │   │       └── status/SKILL.md
 │   └── tests/
 │       ├── .claude-plugin/plugin.json
+│       ├── README.md
 │       ├── reference/diff-scope.md
 │       └── skills/
 │           ├── add/SKILL.md
 │           ├── run/SKILL.md
 │           └── ci/SKILL.md
+├── .github/                      # CI for this repo's own selftest
+├── docs/comparison.md
 └── README.md
 ```
 
