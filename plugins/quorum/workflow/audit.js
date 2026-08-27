@@ -12,10 +12,36 @@ export const meta = {
 const slug = (args && args.slug) || ''
 if (!slug) throw new Error('audit requires args.slug')
 
+// The slug is interpolated straight into the path the scribe is told to write,
+// and the scribe is the one agent here that can write. A slug carrying `/` or
+// `..` therefore aims that write outside docs/audit/ — over docs/work/, or out
+// of the repository altogether, where the skill's own `git status --porcelain`
+// check sees a clean tree and reports that nothing else moved. That check is the
+// evidence AC1 rests on, so the slug is constrained here rather than trusted to
+// the prose rule in reference/audit.md that a model is asked to follow.
+if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
+  throw new Error(
+    'audit requires a kebab-case args.slug — got ' + JSON.stringify(slug) + '. It becomes a ' +
+      'path under docs/audit/, so it may hold lowercase letters, digits and single hyphens ' +
+      'and nothing else.'
+  )
+}
+
 const criteria = (args && args.criteria) || []
 if (!criteria.length) throw new Error('audit requires args.criteria — the list the user approved')
 
+// As load-bearing as the two above: the hash is what lets a reader prove the
+// report was measured against the list a human approved. Without it the scribe
+// writes an empty "Criteria hash" field, and `audit.py --verify` then reports
+// that the report and the criteria are different lists — after N auditors and a
+// refutation pass have run, and for a reason that was knowable before any of it.
 const criteriaHash = (args && args.criteriaHash) || ''
+if (!criteriaHash) {
+  throw new Error(
+    'audit requires args.criteriaHash — the value bin/audit.py --hash printed for the ' +
+      'criteria.md the user approved. Without it nothing can prove what the report measured.'
+  )
+}
 const specSource = (args && args.specSource) || 'free text supplied to /quorum:audit'
 const commit = (args && args.commit) || ''
 const title = (args && args.title) || slug
@@ -32,9 +58,15 @@ const REFUTE_MODEL = models.refute || 'sonnet'
 // Agents are addressed by their namespaced names — <plugin>:<agent>, the same
 // convention the skills use. selftest.py checks every agentType here against
 // plugin.json and agents/*.md, and additionally checks that no agent this script
-// names can write to the repository being audited. That second check is the one
-// that keeps running on a default branch honest: it is a property of the agent
-// definitions, not a promise in a prompt.
+// names declares a file-editing tool.
+//
+// Be precise about what that second check buys, because it is easy to read as
+// more than it is: it settles that no agent here is *granted* Write or Edit. It
+// does not settle that no agent here can write. quorum-auditor holds Bash, and a
+// shell can edit a file, commit, and push. Between the declared grants and the
+// prompts below, only the grants are mechanical; NEVER_RUN is prose, and prose is
+// what a model can talk itself out of. Anything that raises the floor here has to
+// take Bash away or confine it — see the escalation in docs/work/quorum-audit/.
 
 // Repeated into every prompt rather than stated once, because it is the single
 // constraint that makes this command safe to run against production code.
@@ -209,6 +241,7 @@ if (unassigned.length) {
 
 if (!clusters.length) throw new Error('Clustering produced nothing to audit.')
 log(clusters.length + ' cluster(s): ' + clusters.map(function (c) { return c.name }).join(', '))
+if (grouped && grouped.notes) log('Clustering note: ' + grouped.notes)
 
 // ---------------------------------------------------------------- audit
 
@@ -430,6 +463,21 @@ if (!claimed.length) {
 
 phase('Report')
 
+// Every gap has to reach the report already phrased as an observable criterion,
+// because that is what the closing /quorum:1-plan invocation consumes and
+// rewriting it there loses the citation. A schema cannot require one field only
+// when another holds a particular value, so — as with `searched` above — it is
+// settled here. The fallback is the criterion's own text, which the skill already
+// requires to be in the "when <situation>, <observable result>" form: restating
+// the criterion is exactly what a proposed change is. The alternative is leaving
+// the scribe a blank it is explicitly forbidden to fill in.
+criteria.forEach(function (c) {
+  const r = settled[c.id]
+  if (r.status !== 'gap' || (r.proposedChange || '').trim()) return
+  r.proposedChange = c.text
+  r.proposedChangeNote = 'restated from the criterion; the audit proposed no wording of its own'
+})
+
 const gaps = withStatus('gap')
 const unverified = withStatus('unverified')
 const met = withStatus('met')
@@ -439,10 +487,29 @@ const rows = criteria.map(function (c) {
   return Object.assign({ text: c.text, source: c.source || '' }, settled[c.id])
 })
 
+// Recorded in the report, not just in the run log. An auditor that admits it
+// executed the repository under audit has broken the one rule that makes this
+// command safe on a default branch, and a run log scrolls away — the artifact is
+// what the operator of a production repo still has tomorrow. Silence here would
+// leave a report that reads exactly like a clean static audit.
+const ranWarning = ranSomething.length
+  ? '\n\nBEFORE the Outcome section, write a section headed "## Ran during the audit" ' +
+    'containing exactly this line, verbatim: "The audit is supposed to execute nothing ' +
+    'belonging to this repository. These clusters did not confirm that they executed nothing: ' +
+    ranSomething.map(function (a) { return a.cluster }).join(', ') +
+    '. Treat every finding below as coming from a run that may have started this software."\n\n'
+  : ''
+
 await agent(
   'Transcribe this finished audit into ' + reportPath + ', following the report format in ' +
     '${CLAUDE_PLUGIN_ROOT}/reference/audit.md — you cannot read that file, so the format is ' +
     'restated below and the findings are given to you in full.\n\n' +
+    'You may hold a standing instruction to write review files under docs/work/<slug>/reviews/. ' +
+    'It does not apply here. This is an audit, not a review; docs/work/ is not yours to touch on ' +
+    'this run, and writing anything there would break the one property that makes this command ' +
+    'safe to run on a default branch.\n\n' +
+    'Open the file with the line "# Audit report: ' + title + '", then a blank line.\n\n' +
+    ranWarning +
     'Header fields, exactly these:\n' +
     '- **Slug:** ' + slug + '\n' +
     '- **Spec:** ' + specSource + '\n' +

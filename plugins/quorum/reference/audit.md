@@ -115,11 +115,21 @@ the gate and the report change the hash, and re-hashing the file finds it.
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/bin/audit.py" --hash docs/audit/<slug>/criteria.md
 python3 "${CLAUDE_PLUGIN_ROOT}/bin/audit.py" --verify docs/audit/<slug>
+python3 "${CLAUDE_PLUGIN_ROOT}/bin/audit.py" --verify docs/audit/<slug> --expect-report
 ```
 
 `--hash` prints the hash of the criteria list. `--verify` recomputes it, compares
 it against the hash `criteria.md` recorded and against the one `report.md` cites,
-and exits non-zero if any of the three disagree.
+and exits non-zero if any of the three disagree. A directory with no `report.md`
+verifies clean, because that is the ordinary shape of a run that stopped at the
+gate; `--expect-report` says the run was meant to produce one, and makes its
+absence a violation rather than a silence that reads as a pass.
+
+**What the hash does not cover.** It fixes what `criteria.md` says. The auditors
+measure the list the skill hands to `workflow/audit.js`, and nothing mechanical
+checks that the two are the same — the skill writes both, and it is required to
+copy rather than restate. A clean `--verify` therefore proves the criteria were
+not edited after the gate; it does not prove the auditors were given them.
 
 The hash covers the `## Criteria` section only. Everything else in the file —
 the title, the spec reference, the date, the hash line itself — is outside it, so

@@ -8,10 +8,15 @@ fires — and, just as importantly, that legitimate edits are still allowed.
 
 It also checks the one part of the orchestrators a machine can settle without a
 live run: that every script under workflow/ calls its agents by names that
-actually register, and that the agents workflow/audit.js calls cannot write to
-the repository they are auditing. Everything else in those scripts needs real
-agents to exercise. This does not, and the first of them is the failure that has
-already cost two runs.
+actually register, and that no agent workflow/audit.js calls declares a
+file-editing tool. Everything else in those scripts needs real agents to
+exercise. This does not, and the first of them is the failure that has already
+cost two runs.
+
+Note what the second check settles and what it does not: it settles the declared
+grants, not what a shell can do with them. quorum-auditor holds Bash, so "cannot
+write to the repository it audits" is a rule the prompts state, not one this file
+proves.
 
     python3 selftest.py [-v]
 
@@ -40,7 +45,11 @@ MANIFEST = os.path.join(PLUGIN, '.claude-plugin', 'plugin.json')
 AGENTS_DIR = os.path.join(PLUGIN, 'agents')
 WORKFLOW_DIR = os.path.join(PLUGIN, 'workflow')
 
-# Scripts whose agents must not be able to touch the repository they run against.
+# Scripts whose agents must not be *granted* a way to edit the repository they run
+# against. Granted is the operative word: Bash is counted as a read tool below,
+# and a shell can edit a file, so this raises the floor rather than closing the
+# door. Closing it means taking Bash away from the auditor, which is a decision
+# recorded in docs/work/quorum-audit/verdict.md, not one this file can make.
 READ_ONLY_WORKFLOWS = ['audit.js']
 
 # quorum-scribe grants Write and nothing else: it writes the audit report and
@@ -1006,9 +1015,10 @@ CRITERIA = """# Audit criteria: demo
 
 ## Criteria
 
-- **AC1** — when a request arrives with no bearer token, the API answers 401.
+- [ ] **AC1** — when a request arrives with no bearer token, the API answers 401.
   - Source: "every endpoint requires a bearer token" — `docs/spec.md:14`
-- **AC2** — a failed charge is retried three times.
+
+- [ ] **AC2** — a failed charge is retried three times.
   - Source: "retry three times" — *Retries*
 """
 
@@ -1063,14 +1073,26 @@ def test_audit():
         code, _, _ = run(['python3', AUDIT, '--verify', work])
         check('criteria alone verify clean', code == 0)
 
-        # Same list, reflowed: trailing space, a blank line, a ticked checkbox.
-        reflowed = CRITERIA.replace('## Criteria\n', '## Criteria\n\n').replace(
-            'answers 401.', 'answers 401.   ')
-        write_audit(work, criteria_body=reflowed, recorded=original)
-        check('reformatting does not change the hash', audit_hash(path) == original,
-              'reflowed to %r' % audit_hash(path))
-        code, _, _ = run(['python3', AUDIT, '--verify', work])
-        check('a reformatted criteria file still verifies', code == 0)
+        # criteria_hash normalises three things away, and each gets its own
+        # reformat here so a regression names the rule that broke rather than
+        # reporting that the hash moved. Every variant is the same list of
+        # criteria, worded identically — only the typography differs, and a user
+        # who tidies the file after the gate must not be told to re-run the audit.
+        reflows = {
+            'trailing whitespace': lambda t: t.replace('answers 401.', 'answers 401.   '),
+            'a ticked checkbox': lambda t: t.replace('- [ ] **AC2**', '- [x] **AC2**'),
+            'a doubled blank line': lambda t: t.replace(
+                '`docs/spec.md:14`\n\n', '`docs/spec.md:14`\n\n\n'),
+        }
+        for label, reflow in sorted(reflows.items()):
+            body = reflow(CRITERIA)
+            check('the %s reflow actually reformats the fixture' % label, body != CRITERIA,
+                  'the variant is identical to the original, so it tests nothing')
+            write_audit(work, criteria_body=body, recorded=original)
+            check('%s does not change the hash' % label, audit_hash(path) == original,
+                  'reflowed to %r' % audit_hash(path))
+            code, _, _ = run(['python3', AUDIT, '--verify', work])
+            check('a criteria file reflowed with %s still verifies' % label, code == 0)
 
         # Softened: "three times" becomes "at least once". Same criterion to
         # skim, a different thing to be measured against.
@@ -1102,8 +1124,27 @@ def test_audit():
               parsed.get('clean') is False and bool(parsed.get('violations')),
               'printed %r' % out.strip())
 
-        # No hash recorded at all is a violation, not a pass by omission.
+        # A report that cites no hash at all. This is what the scribe writes when
+        # it is handed an empty criteriaHash, and "which criteria it measured is
+        # unknowable" has to be a violation rather than a blank that reads clean.
+        write_audit(work, cited=original)
+        with open(os.path.join(work, 'report.md'), 'w') as handle:
+            handle.write('# Audit report: demo\n\n- **Slug:** demo\n\n## Outcome\n\nAll clear\n')
+        code, out, _ = run(['python3', AUDIT, '--verify', work])
+        check('a report citing no criteria hash does not verify', code == 1,
+              'exit %s: %s' % (code, out.strip()))
+
+        # A missing report.md means two opposite things, and only the caller
+        # knows which: a run that stopped at the gate, or a run that was meant to
+        # write a report and did not. Clean by default, a violation on request.
         os.remove(os.path.join(work, 'report.md'))
+        code, _, _ = run(['python3', AUDIT, '--verify', work])
+        check('an audit stopped at the gate verifies clean', code == 0)
+        code, out, _ = run(['python3', AUDIT, '--verify', work, '--expect-report'])
+        check('a finished audit that wrote no report does not verify', code == 1,
+              'exit %s: %s' % (code, out.strip()))
+
+        # No hash recorded at all is a violation, not a pass by omission.
         with open(path, 'w') as handle:
             handle.write(re.sub(r'^- \*\*Criteria hash.*$', '', CRITERIA % '', flags=re.M))
         code, _, _ = run(['python3', AUDIT, '--verify', work])
@@ -1137,22 +1178,113 @@ def frontmatter_name(path):
 
 
 def frontmatter_tools(path):
-    """The declared `tools:` list, or None when the agent declares no such field.
+    """The declared `tools:` list, or None when it cannot be read as a grant.
 
-    None is not "no tools" — it is *every* tool, inherited. The two are opposites
-    and the caller must not conflate them.
+    None is not "no tools" — it is *every* tool, inherited. The two are
+    opposites, and this check exists precisely to catch a grant it must not
+    mistake for an absence, so everything ambiguous returns None and fails loudly
+    rather than passing quietly.
+
+    Both YAML spellings of the field mean the same thing to the runtime and must
+    mean the same thing here, or the guarantee is defeated by a reformat:
+
+        tools: Read, Grep, Write          # inline scalar
+        tools: "Read, Grep, Write"        # quoted scalar
+        tools: [Read, Grep, Write]        # flow sequence
+        tools:                            # block sequence
+          - Read
+          - Write
+
+    Quotes are stripped for the same reason. A `tools:` field present but
+    yielding no names is returned as None: an unreadable grant is treated as
+    every tool, never as none.
     """
     with open(path) as handle:
         lines = handle.read().split('\n')
     if not lines or lines[0].strip() != '---':
         return None
+
+    found, parts = False, []
     for line in lines[1:]:
         if line.strip() == '---':
             break
+        if found:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith('-'):
+                parts.append(stripped[1:])
+                continue
+            break  # the next key ends the block sequence
         if line.startswith('tools:'):
-            raw = line.split(':', 1)[1].strip().strip('[]')
-            return [part.strip() for part in raw.split(',') if part.strip()]
-    return None
+            found = True
+            parts.extend(line.split(':', 1)[1].strip().strip('[]').split(','))
+    if not found:
+        return None
+
+    names = [part.strip().strip('\'"').strip() for part in parts]
+    names = [name for name in names if name]
+    return names or None
+
+
+def test_agent_tools():
+    """The read-only guard reads every YAML spelling of `tools:` the same way.
+
+    The guard that keeps /quorum:audit safe on a default branch is a comparison
+    against a parsed tool list, so the parser *is* the guarantee. It used to read
+    only the inline comma form: a block sequence yielded [], a quoted scalar
+    yielded names with quotes still attached, and in both cases `Write` failed to
+    match WRITE_TOOLS and the check reported PASS on an agent that really could
+    edit the repository it was auditing. The guarantee was defeated by a reformat,
+    which is the quietest way a check can stop meaning anything.
+
+    So each spelling is asserted to parse to the same grant, and an unreadable
+    grant is asserted to come back None — inherit-everything — so the caller
+    fails closed.
+    """
+    print('agent tool grants')
+    work = tempfile.mkdtemp(prefix='quorum-tools-')
+    try:
+        def parse(text):
+            path = os.path.join(work, 'agent.md')
+            with open(path, 'w') as handle:
+                handle.write(text)
+            return frontmatter_tools(path)
+
+        want = ['Read', 'Grep', 'Write']
+        spellings = {
+            'inline': 'tools: Read, Grep, Write',
+            'quoted': 'tools: "Read, Grep, Write"',
+            'single-quoted': "tools: 'Read, Grep, Write'",
+            'flow sequence': 'tools: [Read, Grep, Write]',
+            'quoted flow sequence': 'tools: ["Read", "Grep", "Write"]',
+            'block sequence': 'tools:\n  - Read\n  - Grep\n  - Write',
+        }
+        for label, field in sorted(spellings.items()):
+            tools = parse('---\nname: probe\n%s\n---\n\nbody\n' % field)
+            check('a %s tools: field parses to the grant it makes' % label,
+                  tools == want, 'parsed to %r' % (tools,))
+            writes = sorted(t for t in (tools or []) if t in WRITE_TOOLS)
+            check('a %s tools: field exposes its write tool' % label,
+                  writes == ['Write'], 'writes %r' % (writes,))
+
+        # A key after the block sequence ends it — a description holding a dash
+        # must not be swept up as another tool.
+        tools = parse('---\nname: probe\ntools:\n  - Read\n'
+                      'description: reads things - and nothing else\n---\n\nbody\n')
+        check('a key after a block sequence ends it', tools == ['Read'],
+              'parsed to %r' % (tools,))
+
+        # None means "inherits everything", and every unreadable grant must land
+        # there rather than on the empty list, which reads as "grants nothing".
+        check('no tools: field at all is inherit-everything',
+              parse('---\nname: probe\n---\n\nbody\n') is None)
+        check('an empty tools: field is inherit-everything, not a grant of nothing',
+              parse('---\nname: probe\ntools:\n---\n\nbody\n') is None)
+        check('a tools: field of only separators is inherit-everything',
+              parse('---\nname: probe\ntools: [ , ]\n---\n\nbody\n') is None)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
 
 
 def test_agents():
@@ -1225,10 +1357,12 @@ def test_agents():
               '%s defines it, no script under workflow/ ever calls it' % declared[name])
 
     # workflow/audit.js runs against a repository that never asked for this
-    # pipeline, on its default branch, and the only reason that is safe is that
-    # nothing the script starts can write to that repository. That is a property
-    # of the agent definitions rather than of the prompts, so it is settled here
-    # instead of being promised in prose.
+    # pipeline, on its default branch. No agent it names may be *granted* a
+    # file-editing tool: that much is a property of the agent definitions rather
+    # than of the prompts, so it is settled here instead of being promised in
+    # prose. It is a floor, not the whole guarantee — quorum-auditor holds Bash,
+    # and nothing here stops a shell from writing. Do not read a pass as proof
+    # that the audited repository cannot be touched.
     for entry in sorted(READ_ONLY_WORKFLOWS):
         check('%s exists to be checked' % entry,
               os.path.exists(os.path.join(WORKFLOW_DIR, entry)),
@@ -1239,8 +1373,9 @@ def test_agents():
                 continue  # the resolve check above already failed on this one
             tools = frontmatter_tools(os.path.join(AGENTS_DIR, declared[name]))
             if tools is None:
-                check('%s: %s declares its tools' % (entry, name), False,
-                      'no tools: field, so it inherits every tool, file editing included')
+                check('%s: %s declares its tools readably' % (entry, name), False,
+                      'no tools: field, or one that yields no names — either way it must be '
+                      'read as inheriting every tool, file editing included')
                 continue
             writes = sorted(t for t in tools if t in WRITE_TOOLS)
             reads = sorted(t for t in tools if t in READ_TOOLS)
@@ -1266,6 +1401,7 @@ def main():
     test_hook()
     test_state()
     test_audit()
+    test_agent_tools()
     test_agents()
     test_lifetime()
     test_version()

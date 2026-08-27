@@ -1,13 +1,19 @@
 {
   "slug": "quorum-audit",
   "branch": "feature/quorum-audit",
-  "stage": "building",
-  "updated": "2026-08-27T09:33:33Z",
+  "stage": "reviewed",
+  "updated": "2026-08-27T10:05:24Z",
   "plan": {
     "acs": 11,
     "steps": 7,
     "open": 0,
     "requirementsHash": "741f329d1fb81de354a064b9eac44534a9c79fcdde2d1895ccba72399300d9dc"
+  },
+  "build": {
+    "stepsDone": 7,
+    "deviations": 6,
+    "suite": "green",
+    "head": "7ea8d21"
   },
   "log": [
     "2026-08-27T09:26:58Z 1-plan planned 10 ACs, 7 steps, 0 open questions",
@@ -15,6 +21,8 @@
     "2026-08-27T09:31:07Z pipeline launched",
     "2026-08-27T09:31:42Z launch aborted before the workflow started; no agent ran, approval unspent",
     "2026-08-27T09:33:33Z 1-plan amended by user: behavior pass dropped, AC11 added, 11 ACs",
-    "2026-08-27T09:33:33Z pipeline launched"
+    "2026-08-27T09:33:33Z pipeline launched",
+    "2026-08-27T09:51:58Z 2-build built 7/7, 6 deviations (2 PLAN DEFECT), suite green 207/207",
+    "2026-08-27T10:05:24Z panel complete, adjudication started"
   ]
 }

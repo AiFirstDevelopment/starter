@@ -2,7 +2,7 @@
 
 - **Slug:** quorum-audit
 - **Branch:** feature/quorum-audit
-- **Status:** built
+- **Status:** adjudicated
 
 ## Prompt
 

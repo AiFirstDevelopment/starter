@@ -12,6 +12,7 @@ now, what `criteria.md` says it contained, and what `report.md` says it measured
 
   audit.py --hash docs/audit/<slug>/criteria.md    # the hash of the criteria list
   audit.py --verify docs/audit/<slug> [--json]     # all three agree?
+  audit.py --verify <dir> --expect-report          # ...and a report exists at all
   audit.py --version                               # which hashing this copy does
 
 Deliberately not a flag on guard.py. That file is vendored into every adopting
@@ -100,8 +101,16 @@ def read(path):
         return handle.read()
 
 
-def verify(work_dir):
-    """Compare the three hashes. Returns (exit code, result dict)."""
+def verify(work_dir, expect_report=False):
+    """Compare the three hashes. Returns (exit code, result dict).
+
+    A directory with criteria.md and no report.md is the ordinary shape of a run
+    that stopped at the gate, so it verifies clean by default. After a run that
+    was supposed to produce a report, that same silence means the opposite — the
+    scribe wrote nothing, or wrote somewhere else — and a clean exit there would
+    tell the caller a report it never got was measured correctly. `expect_report`
+    is how a caller says which of the two it is.
+    """
     criteria_path = os.path.join(work_dir, 'criteria.md')
     report_path = os.path.join(work_dir, 'report.md')
 
@@ -136,8 +145,13 @@ def verify(work_dir):
             % (result['recorded'], computed))
 
     if not result['reported']:
-        result['notes'].append(
-            'no report.md — the run stopped at the criteria gate, or has not been run')
+        if expect_report:
+            result['violations'].append(
+                'no report.md at %s, though the run was expected to have written one — '
+                'nothing here was measured against the approved criteria' % report_path)
+        else:
+            result['notes'].append(
+                'no report.md — the run stopped at the criteria gate, or has not been run')
         return (1 if result['violations'] else 0), result
 
     report_text = read(report_path)
@@ -158,6 +172,8 @@ def main():
     parser.add_argument('--hash', metavar='CRITERIA')
     parser.add_argument('--verify', metavar='AUDIT_DIR')
     parser.add_argument('--json', action='store_true')
+    parser.add_argument('--expect-report', action='store_true',
+                        help='a missing report.md is a violation, not a run that stopped at the gate')
     parser.add_argument('--version', action='store_true')
     opts = parser.parse_args()
 
@@ -181,7 +197,7 @@ def main():
         parser.print_usage()
         return 2
 
-    code, result = verify(opts.verify)
+    code, result = verify(opts.verify, expect_report=opts.expect_report)
     if result is None:
         return code
 

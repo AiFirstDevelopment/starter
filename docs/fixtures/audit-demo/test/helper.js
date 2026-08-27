@@ -1,5 +1,10 @@
 'use strict'
 
+// src/server.js reads WIDGET_API_KEYS once, at module load, so this has to be set
+// before it is required — otherwise no key is recognised, every request answers
+// 401, and the tests below that need an authenticated request cannot pass.
+process.env.WIDGET_API_KEYS = process.env.WIDGET_API_KEYS || 'test-key,burst-key'
+
 const { server } = require('../src/server')
 
 let base = null

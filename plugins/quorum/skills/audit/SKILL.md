@@ -167,6 +167,18 @@ itself. Resolving them once here is what makes "every auditor measured the same
 list" a fact rather than a hope — the same reason `/quorum:pipeline` resolves the
 diff range once for its six lenses.
 
+**`criteria` must be the list in `criteria.md`, criterion for criterion and word
+for word.** This is the one seam the hash does not cover: it covers what
+`criteria.md` says, and the auditors measure what you pass here. Paraphrasing a
+criterion on the way into this call — shortening it, merging two, dropping a
+clause — produces a report that verifies clean against criteria nobody audited,
+which is the exact failure the hash exists to prevent, one step to the side of
+where the hash looks. Copy the list; do not restate it. If the user amended the
+criteria at the gate, rebuild this array from the amended file, not from memory.
+
+The script rejects a `slug` that is not kebab-case and refuses to run without a
+`criteriaHash`, before any agent starts.
+
 The script clusters the criteria, fans out one read-only auditor per cluster,
 puts every claimed gap to a refutation pass on a different model, and has the
 scribe write `report.md`. It launches nothing belonging to the repository under
@@ -183,16 +195,32 @@ for the live progress tree.
 
 ## Step 6 — Report
 
-First, prove the report was measured against the approved list:
+First, check the report against the criteria the hash covers:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/bin/audit.py" --verify docs/audit/<slug>
+python3 "${CLAUDE_PLUGIN_ROOT}/bin/audit.py" --verify docs/audit/<slug> --expect-report
 ```
 
-Exit 0 means `criteria.md` still hashes to what it recorded and `report.md` cites
-that same hash. **Non-zero means the report and the criteria are not the same
-list** — report that above everything else and do not summarise the findings as
-though they stood; re-run the audit rather than reconciling the two by hand.
+Exit 0 means three things agree: `criteria.md` still hashes to what it recorded,
+a `report.md` exists, and it cites that same hash. **Non-zero means the report and
+the criteria are not the same list, or there is no report at all** — report that
+above everything else and do not summarise the findings as though they stood;
+re-run the audit rather than reconciling the two by hand.
+
+`--expect-report` is what makes a missing `report.md` a failure here. Without it,
+a directory holding only `criteria.md` verifies clean, because that is the
+ordinary shape of a run that stopped at the gate — which is exactly what this run
+is not.
+
+Say what exit 0 does **not** prove, if you are asked or if anything looks off: it
+proves `criteria.md` was not edited between the gate and now, not that the list
+handed to the auditors in Step 5 was the list in `criteria.md`. Those are the same
+list because you built both, and nothing mechanical checks it.
+
+Then, if any cluster came back without confirming it ran nothing, say so **above
+the findings**. The report carries a *Ran during the audit* section in that case.
+An audit that executed the repository broke the rule that makes this command safe
+on `main`, and the operator has to hear it before they hear a single result.
 
 Then confirm nothing outside the audit directory moved:
 
