@@ -286,6 +286,34 @@ def test_guard():
                          VERDICT_OK + '\n## Escalations\n\n### E1 — rewrite the transport?\n\nNeeds a human.\n'),
          'verdict')
 
+    # The rule's own message names the two outcomes an escalation permits. Both
+    # must pass, or the only verdict that clears the guard over working code
+    # with a question left for a human is "blocked".
+    case('ready with follow-ups alongside an open escalation is allowed',
+         lambda r: write(r, 'docs/work/demo/verdict.md',
+                         VERDICT_OK.replace('**Outcome:** ready', '**Outcome:** ready with follow-ups')
+                         + '\n## Escalations\n\n### E1 — rewrite the transport?\n\nNeeds a human.\n'),
+         None)
+
+    case('blocked alongside an open escalation is allowed',
+         lambda r: write(r, 'docs/work/demo/verdict.md',
+                         VERDICT_OK.replace('**Outcome:** ready', '**Outcome:** blocked')
+                         + '\n## Escalations\n\n### E1 — rewrite the transport?\n\nNeeds a human.\n'),
+         None)
+
+    # A red suite is unacceptable under either "ready" outcome; that check keeps
+    # the prefix test on purpose.
+    case('ready over a red suite',
+         lambda r: write(r, 'docs/work/demo/verdict.md',
+                         VERDICT_OK.replace('**Test suite:** green', '**Test suite:** red')),
+         'verdict')
+
+    case('ready with follow-ups over a red suite',
+         lambda r: write(r, 'docs/work/demo/verdict.md',
+                         VERDICT_OK.replace('**Outcome:** ready', '**Outcome:** ready with follow-ups')
+                         .replace('**Test suite:** green', '**Test suite:** red')),
+         'verdict')
+
     case('ready with a criterion marked not met',
          lambda r: write(r, 'docs/work/demo/verdict.md',
                          VERDICT_OK.replace('| AC2 | yes |', '| AC2 | **no** |')),
