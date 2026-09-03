@@ -37,7 +37,7 @@ import sys
 # adopting repo to re-vendor. Bump it when the rules change — drift is detected
 # by comparing file contents, so this number is for the error message and for
 # `--version` on a vendored copy, not for the check itself.
-VERSION = '3'
+VERSION = '4'
 
 # What --install-ci writes. Git reports paths with forward slashes, and these are
 # compared against that as well as against the filesystem, so they are literals
@@ -275,7 +275,12 @@ class Guard(object):
         if outcome and outcome.lower().startswith('ready'):
             if suite and 'red' in suite.lower():
                 self.fail('verdict', 'outcome "%s" over a red suite' % outcome)
-            if has_content(text, 'Escalations'):
+            # Exact match, not the prefix the block is gated on: "ready with
+            # follow-ups" is one of the two outcomes an escalation permits, and
+            # the prefix test rejected it for carrying the very outcome this
+            # message demands — leaving "blocked" as the only outcome that
+            # passed over working code.
+            if outcome.strip().lower() == 'ready' and has_content(text, 'Escalations'):
                 self.fail(
                     'verdict',
                     'outcome "%s" alongside open escalations — an escalation forces '

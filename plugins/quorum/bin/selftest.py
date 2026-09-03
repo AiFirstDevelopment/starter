@@ -6,10 +6,20 @@ pipeline's promises now rest on. Prose about them is worth nothing; this builds
 throwaway repositories, breaks each rule on purpose, and checks that the rule
 fires — and, just as importantly, that legitimate edits are still allowed.
 
-It also checks the one part of the orchestrator a machine can settle without a
-live run: that pipeline.js calls its agents by names that actually register.
-Everything else in that script needs real agents to exercise. This does not, and
-it is the failure that has already cost two runs.
+It also checks the one part of the orchestrators a machine can settle without a
+live run: that every script under workflow/ calls its agents by names that
+actually register, and that every agent workflow/audit.js calls is granted
+nothing but the tools it needs to read. Everything else in those scripts needs
+real agents to exercise. This does not, and the first of them is the failure that
+has already cost two runs.
+
+Note what the second check settles and what it does not. It settles the declared
+grants of the agents audit.js names: no file-editing tool, no shell, and nothing
+outside a fixed allowlist, so "cannot write to or execute the repository it
+audits" is proven here rather than promised in a prompt. It settles nothing about
+the audit *skill*, which runs in an ordinary session holding a shell and reads the
+spec file out of the repository under audit; that restraint is prose, and
+reference/audit.md says so.
 
     python3 selftest.py [-v]
 
@@ -31,11 +41,49 @@ HOOK = os.path.join(HERE, 'plan-lock-hook.py')
 STATE = os.path.join(HERE, 'state.py')
 HISTORY = os.path.join(HERE, 'history.py')
 WATCH = os.path.join(HERE, 'watch.py')
+AUDIT = os.path.join(HERE, 'audit.py')
 
 PLUGIN = os.path.dirname(HERE)
 MANIFEST = os.path.join(PLUGIN, '.claude-plugin', 'plugin.json')
 AGENTS_DIR = os.path.join(PLUGIN, 'agents')
-PIPELINE = os.path.join(PLUGIN, 'workflow', 'pipeline.js')
+WORKFLOW_DIR = os.path.join(PLUGIN, 'workflow')
+
+# Scripts whose agents must not be granted a way to touch the repository they run
+# against — neither to edit it nor to execute it. /quorum:audit runs on the default
+# branch of a production repository that never asked for this pipeline, and the
+# reason that is safe has to be a property of the tool grants: the audited
+# repository is untrusted input, so a rule an agent is merely asked to follow can
+# be argued out of it by a README it reads.
+READ_ONLY_WORKFLOWS = ['audit.js']
+
+# quorum-scribe grants Write and nothing else: it writes the audit report and
+# cannot read a line of the repository under audit, transcribing what the
+# auditors hand it. Something has to write report.md, and a write-only agent
+# that cannot read is the smallest thing that can. Nothing else is exempt, and
+# the exemption is checked rather than trusted — see test_agents().
+WRITE_ONLY_EXEMPT = ['quorum-scribe']
+
+WRITE_TOOLS = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit']
+READ_TOOLS = ['Read', 'Grep', 'Glob', 'Bash', 'NotebookRead']
+
+# Tools that can run the audited repository. A shell is the whole list, and it is
+# kept separate from WRITE_TOOLS because the two fail differently: a write tool
+# edits a file, while a shell can edit it, commit it, push it, and run the test
+# suite and the application besides. Bash appears in READ_TOOLS as well — a shell
+# genuinely can read — and the two memberships answer different questions.
+EXEC_TOOLS = ['Bash']
+
+# And the allowlist the three lists above cannot replace. WRITE_TOOLS, READ_TOOLS
+# and EXEC_TOOLS are membership tests over exact tool names, which makes them only
+# as good as the spellings someone thought of: `Bash(git log:*)` is a shell and is
+# not the string 'Bash', and `mcp__filesystem__write_file` edits files and is not
+# in WRITE_TOOLS. Both passed every denylist check while holding exactly the power
+# those checks exist to deny. So the grant is matched positively as well — an
+# audit.js agent may hold these tools and nothing else, and an unfamiliar name
+# fails rather than passing unseen. Widening either list is a decision someone has
+# to make on purpose, which is the point.
+AUDIT_READ_TOOLS = ['Read', 'Grep', 'Glob']
+AUDIT_WRITE_ONLY_TOOLS = ['Write']
 
 PLAN = """# Plan: demo
 
@@ -236,6 +284,34 @@ def test_guard():
     case('ready alongside an open escalation',
          lambda r: write(r, 'docs/work/demo/verdict.md',
                          VERDICT_OK + '\n## Escalations\n\n### E1 — rewrite the transport?\n\nNeeds a human.\n'),
+         'verdict')
+
+    # The rule's own message names the two outcomes an escalation permits. Both
+    # must pass, or the only verdict that clears the guard over working code
+    # with a question left for a human is "blocked".
+    case('ready with follow-ups alongside an open escalation is allowed',
+         lambda r: write(r, 'docs/work/demo/verdict.md',
+                         VERDICT_OK.replace('**Outcome:** ready', '**Outcome:** ready with follow-ups')
+                         + '\n## Escalations\n\n### E1 — rewrite the transport?\n\nNeeds a human.\n'),
+         None)
+
+    case('blocked alongside an open escalation is allowed',
+         lambda r: write(r, 'docs/work/demo/verdict.md',
+                         VERDICT_OK.replace('**Outcome:** ready', '**Outcome:** blocked')
+                         + '\n## Escalations\n\n### E1 — rewrite the transport?\n\nNeeds a human.\n'),
+         None)
+
+    # A red suite is unacceptable under either "ready" outcome; that check keeps
+    # the prefix test on purpose.
+    case('ready over a red suite',
+         lambda r: write(r, 'docs/work/demo/verdict.md',
+                         VERDICT_OK.replace('**Test suite:** green', '**Test suite:** red')),
+         'verdict')
+
+    case('ready with follow-ups over a red suite',
+         lambda r: write(r, 'docs/work/demo/verdict.md',
+                         VERDICT_OK.replace('**Outcome:** ready', '**Outcome:** ready with follow-ups')
+                         .replace('**Test suite:** green', '**Test suite:** red')),
          'verdict')
 
     case('ready with a criterion marked not met',
@@ -980,6 +1056,257 @@ def test_state():
         shutil.rmtree(repo, ignore_errors=True)
 
 
+# ------------------------------------------------------- the criteria hash
+
+CRITERIA = """# Audit criteria: demo
+
+- **Slug:** demo
+- **Spec:** `docs/spec.md`
+- **Criteria hash:** %s
+
+## Criteria
+
+- [ ] **AC1** — when a request arrives with no bearer token, the API answers 401.
+  - Source: "every endpoint requires a bearer token" — `docs/spec.md:14`
+
+- [ ] **AC2** — a failed charge is retried three times.
+  - Source: "retry three times" — *Retries*
+"""
+
+REPORT = """# Audit report: demo
+
+- **Slug:** demo
+- **Criteria hash:** %s
+
+## Outcome
+
+All clear
+"""
+
+
+def write_audit(work, criteria_body=None, recorded=None, cited=None):
+    """An audit directory whose three hashes can each be moved independently."""
+    path = os.path.join(work, 'criteria.md')
+    body = CRITERIA if criteria_body is None else criteria_body
+    with open(path, 'w') as handle:
+        handle.write(body % (recorded if recorded is not None else 'PLACEHOLDER'))
+    if recorded is None:
+        code, out, _ = run(['python3', AUDIT, '--hash', path])
+        with open(path, 'w') as handle:
+            handle.write(body % out.strip())
+    if cited is not None:
+        with open(os.path.join(work, 'report.md'), 'w') as handle:
+            handle.write(REPORT % cited)
+    return path
+
+
+def audit_hash(path):
+    code, out, _ = run(['python3', AUDIT, '--hash', path])
+    return out.strip() if code == 0 else None
+
+
+def test_audit():
+    """A softened criterion changes the hash, and verification says so.
+
+    The gate is the only human decision in an audit, and it is spent on a list of
+    criteria. If that list can be edited afterwards without anything noticing,
+    the gate bought nothing — a report measured against quietly weakened criteria
+    reads exactly like a report measured against the ones a human approved.
+    """
+    print('criteria hash')
+    work = tempfile.mkdtemp(prefix='quorum-audit-')
+    try:
+        path = write_audit(work)
+        original = audit_hash(path)
+        check('--hash prints a sha256', bool(original) and len(original or '') == 64,
+              'printed %r' % original)
+
+        code, _, _ = run(['python3', AUDIT, '--verify', work])
+        check('criteria alone verify clean', code == 0)
+
+        # criteria_hash normalises three things away, and each gets its own
+        # reformat here so a regression names the rule that broke rather than
+        # reporting that the hash moved. Every variant is the same list of
+        # criteria, worded identically — only the typography differs, and a user
+        # who tidies the file after the gate must not be told to re-run the audit.
+        reflows = {
+            'trailing whitespace': lambda t: t.replace('answers 401.', 'answers 401.   '),
+            'a ticked checkbox': lambda t: t.replace('- [ ] **AC2**', '- [x] **AC2**'),
+            'a doubled blank line': lambda t: t.replace(
+                '`docs/spec.md:14`\n\n', '`docs/spec.md:14`\n\n\n'),
+        }
+        for label, reflow in sorted(reflows.items()):
+            body = reflow(CRITERIA)
+            check('the %s reflow actually reformats the fixture' % label, body != CRITERIA,
+                  'the variant is identical to the original, so it tests nothing')
+            write_audit(work, criteria_body=body, recorded=original)
+            check('%s does not change the hash' % label, audit_hash(path) == original,
+                  'reflowed to %r' % audit_hash(path))
+            code, _, _ = run(['python3', AUDIT, '--verify', work])
+            check('a criteria file reflowed with %s still verifies' % label, code == 0)
+
+        # Softened: "three times" becomes "at least once". Same criterion to
+        # skim, a different thing to be measured against.
+        softened = CRITERIA.replace('retried three times', 'retried at least once')
+        write_audit(work, criteria_body=softened, recorded=original)
+        weakened = audit_hash(path)
+        check('a softened criterion changes the hash', weakened != original,
+              'both hash to %s' % original)
+        code, out, _ = run(['python3', AUDIT, '--verify', work])
+        check('verification catches criteria edited after the gate', code == 1,
+              'exit %s: %s' % (code, out.strip()))
+
+        # A report citing the hash it was actually audited against.
+        write_audit(work, cited=original)
+        code, _, _ = run(['python3', AUDIT, '--verify', work])
+        check('a report citing the current criteria verifies', code == 0)
+
+        # ...and one citing a list that is no longer what criteria.md holds.
+        write_audit(work, cited='0' * 64)
+        code, out, _ = run(['python3', AUDIT, '--verify', work])
+        check('verification catches a report measured against other criteria', code == 1,
+              'exit %s: %s' % (code, out.strip()))
+        code, out, _ = run(['python3', AUDIT, '--verify', work, '--json'])
+        try:
+            parsed = json.loads(out)
+        except ValueError:
+            parsed = {}
+        check('--json reports the mismatch machine-readably',
+              parsed.get('clean') is False and bool(parsed.get('violations')),
+              'printed %r' % out.strip())
+
+        # A report that cites no hash at all. This is what the scribe writes when
+        # it is handed an empty criteriaHash, and "which criteria it measured is
+        # unknowable" has to be a violation rather than a blank that reads clean.
+        write_audit(work, cited=original)
+        with open(os.path.join(work, 'report.md'), 'w') as handle:
+            handle.write('# Audit report: demo\n\n- **Slug:** demo\n\n## Outcome\n\nAll clear\n')
+        code, out, _ = run(['python3', AUDIT, '--verify', work])
+        check('a report citing no criteria hash does not verify', code == 1,
+              'exit %s: %s' % (code, out.strip()))
+
+        # A missing report.md means two opposite things, and only the caller
+        # knows which: a run that stopped at the gate, or a run that was meant to
+        # write a report and did not. Clean by default, a violation on request.
+        os.remove(os.path.join(work, 'report.md'))
+        code, _, _ = run(['python3', AUDIT, '--verify', work])
+        check('an audit stopped at the gate verifies clean', code == 0)
+        code, out, _ = run(['python3', AUDIT, '--verify', work, '--expect-report'])
+        check('a finished audit that wrote no report does not verify', code == 1,
+              'exit %s: %s' % (code, out.strip()))
+
+        # No hash recorded at all is a violation, not a pass by omission.
+        with open(path, 'w') as handle:
+            handle.write(re.sub(r'^- \*\*Criteria hash.*$', '', CRITERIA % '', flags=re.M))
+        code, _, _ = run(['python3', AUDIT, '--verify', work])
+        check('criteria with no recorded hash do not verify', code == 1)
+
+        # Nothing to hash is a could-not-run, distinct from a mismatch.
+        with open(path, 'w') as handle:
+            handle.write('# Audit criteria: demo\n\nno criteria section here\n')
+        code, _, _ = run(['python3', AUDIT, '--hash', path])
+        check('a file with no criteria section cannot be hashed', code == 2)
+        code, _, _ = run(['python3', AUDIT, '--verify', os.path.join(work, 'nope')])
+        check('a missing audit directory is could-not-run, not clean', code == 2)
+
+        # --check-slug. The slug is pasted into docs/audit/<slug>/ and written to
+        # before audit.js — which validates its own copy — ever runs, so this is
+        # the only thing standing between a slug carrying ".." and a file written
+        # outside the working tree, where the skill's own `git status` check
+        # cannot see it. It had no coverage at all: replacing the pattern with
+        # `.*` left the suite green.
+        for good in ['widget-api', 'billing', 'a1', 'two-three-four']:
+            code, _, err = run(['python3', AUDIT, '--check-slug', good])
+            check('slug %r is accepted' % good, code == 0, 'exit %s: %s' % (code, err.strip()))
+
+        # Each of these is a different way to leave the audit directory or to
+        # produce a path nothing downstream can handle, and each is named so a
+        # regression says which one stopped being caught.
+        bad = {
+            'parent directory': '..',
+            'a traversal': '../../etc',
+            'a nested path': 'a/b',
+            'an absolute path': '/etc',
+            'uppercase': 'Foo',
+            'a leading hyphen': '-x',
+            'a trailing hyphen': 'x-',
+            'a doubled hyphen': 'a--b',
+            'the empty string': '',
+            'a space': 'two words',
+            'a dollar substitution': '$(printf INJECTED)',
+            'a backtick substitution': '`printf INJECTED`',
+        }
+        for label, slug in sorted(bad.items()):
+            code, _, _ = run(['python3', AUDIT, '--check-slug', slug])
+            check('slug rejected: %s' % label, code == 2, 'exit %s on %r' % (code, slug))
+
+        # Python's `$` also matches immediately before a trailing newline and
+        # JavaScript's does not, so `match()` here blessed a slug audit.js would
+        # reject afterwards — after criteria.md was written and the gate spent.
+        # fullmatch() is what keeps the two validators agreeing.
+        code, _, _ = run(['python3', AUDIT, '--check-slug', 'ok\n'])
+        check('a trailing newline is rejected, as audit.js rejects it', code == 2)
+
+        # The skill passes the slug on stdin behind a quoted heredoc, because a
+        # slug interpolated into a shell word is expanded by bash before audit.py
+        # sees it. One trailing newline is the delimiter's and is stripped; a
+        # second one is not.
+        code, _, err = run(['python3', AUDIT, '--check-slug', '-'], stdin=b'widget-api\n')
+        check('a slug on stdin is accepted', code == 0, 'exit %s: %s' % (code, err.strip()))
+        code, _, _ = run(['python3', AUDIT, '--check-slug', '-'], stdin=b'../../etc\n')
+        check('a traversal on stdin is rejected', code == 2)
+        code, _, _ = run(['python3', AUDIT, '--check-slug', '-'], stdin=b'widget-api\n\n')
+        check('only the delimiter newline is stripped from stdin', code == 2)
+
+        # --check-slug-file is the form the skill actually uses, and the reason it
+        # exists is that both earlier forms were defeated by the same class of
+        # attack: untrusted repository bytes reaching bash before audit.py runs.
+        # A quoted heredoc ended at the first line equal to its delimiter, so a
+        # candidate carrying that word on its own line closed the heredoc and the
+        # rest was parsed as shell. Trimming to the first line would have hidden
+        # exactly that, which is why an embedded newline is a rejection and not a
+        # trim.
+        candidate = os.path.join(work, 'cand')
+
+        def check_slug_file(raw):
+            with open(candidate, 'wb') as handle:
+                handle.write(raw)
+            return run(['python3', AUDIT, '--check-slug-file', candidate])[0]
+
+        check('a slug in a file is accepted', check_slug_file(b'widget-api\n') == 0)
+        check('one trailing newline is tolerated in a slug file',
+              check_slug_file(b'widget-api') == 0)
+        check('a traversal in a slug file is rejected',
+              check_slug_file(b'../../etc\n') == 2)
+        check('a heredoc-delimiter collision payload is rejected, not truncated',
+              check_slug_file(b'widget-api\nSLUG\ntouch INJECTED\n') == 2,
+              'a multi-line candidate must fail rather than validate its first line')
+        check('command substitution in a slug file is rejected',
+              check_slug_file(b'a$(id)b\n') == 2)
+        check('a backtick payload in a slug file is rejected',
+              check_slug_file(b'a`id`b\n') == 2)
+        check('a missing slug file is an error, not a pass',
+              run(['python3', AUDIT, '--check-slug-file',
+                   os.path.join(work, 'nope')])[0] == 2)
+        os.remove(candidate)
+
+        # The skill is instructed to use the file form and never a shell word.
+        # If that instruction reverts to interpolating the slug, this fires.
+        with open(os.path.join(PLUGIN, 'skills', 'audit', 'SKILL.md')) as handle:
+            skill = handle.read()
+        check('the audit skill checks the slug from a file, not the shell',
+              '--check-slug-file' in skill and "--check-slug -" not in skill,
+              'a slug in a shell word or heredoc reaches bash before audit.py')
+
+        # Rejection must write nothing. The whole point of running this before
+        # criteria.md is that a bad slug costs the target repository nothing.
+        before = sorted(os.listdir(work))
+        run(['python3', AUDIT, '--check-slug', '../../etc'], cwd=work)
+        check('a rejected slug writes nothing', sorted(os.listdir(work)) == before)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 # ------------------------------------------------------------------ the agents
 
 def frontmatter_name(path):
@@ -996,19 +1323,132 @@ def frontmatter_name(path):
     return None
 
 
-def test_agents():
-    """The orchestrator names agents that exist, the way they actually register.
+def frontmatter_tools(path):
+    """The declared `tools:` list, or None when it cannot be read as a grant.
 
-    Nothing else covers pipeline.js. The guard checks what the pipeline produces,
-    not the script that runs it, so a wrong agentType stays invisible until a run
-    reaches the first agent() call — which is after the approval gate, on work
-    that then cannot start.
+    None is not "no tools" — it is *every* tool, inherited. The two are
+    opposites, and this check exists precisely to catch a grant it must not
+    mistake for an absence, so everything ambiguous returns None and fails loudly
+    rather than passing quietly.
+
+    Both YAML spellings of the field mean the same thing to the runtime and must
+    mean the same thing here, or the guarantee is defeated by a reformat:
+
+        tools: Read, Grep, Write          # inline scalar
+        tools: "Read, Grep, Write"        # quoted scalar
+        tools: [Read, Grep, Write]        # flow sequence
+        tools:                            # block sequence
+          - Read
+          - Write
+
+    Quotes are stripped for the same reason. A `tools:` field present but
+    yielding no names is returned as None: an unreadable grant is treated as
+    every tool, never as none.
+    """
+    with open(path) as handle:
+        lines = handle.read().split('\n')
+    if not lines or lines[0].strip() != '---':
+        return None
+
+    found, parts = False, []
+    for line in lines[1:]:
+        if line.strip() == '---':
+            break
+        if found:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith('-'):
+                parts.append(stripped[1:])
+                continue
+            break  # the next key ends the block sequence
+        if line.startswith('tools:'):
+            found = True
+            parts.extend(line.split(':', 1)[1].strip().strip('[]').split(','))
+    if not found:
+        return None
+
+    names = [part.strip().strip('\'"').strip() for part in parts]
+    names = [name for name in names if name]
+    return names or None
+
+
+def test_agent_tools():
+    """The read-only guard reads every YAML spelling of `tools:` the same way.
+
+    The guard that keeps /quorum:audit safe on a default branch is a comparison
+    against a parsed tool list, so the parser *is* the guarantee. It used to read
+    only the inline comma form: a block sequence yielded [], a quoted scalar
+    yielded names with quotes still attached, and in both cases `Write` failed to
+    match WRITE_TOOLS and the check reported PASS on an agent that really could
+    edit the repository it was auditing. The guarantee was defeated by a reformat,
+    which is the quietest way a check can stop meaning anything.
+
+    So each spelling is asserted to parse to the same grant, and an unreadable
+    grant is asserted to come back None — inherit-everything — so the caller
+    fails closed.
+    """
+    print('agent tool grants')
+    work = tempfile.mkdtemp(prefix='quorum-tools-')
+    try:
+        def parse(text):
+            path = os.path.join(work, 'agent.md')
+            with open(path, 'w') as handle:
+                handle.write(text)
+            return frontmatter_tools(path)
+
+        want = ['Read', 'Grep', 'Write']
+        spellings = {
+            'inline': 'tools: Read, Grep, Write',
+            'quoted': 'tools: "Read, Grep, Write"',
+            'single-quoted': "tools: 'Read, Grep, Write'",
+            'flow sequence': 'tools: [Read, Grep, Write]',
+            'quoted flow sequence': 'tools: ["Read", "Grep", "Write"]',
+            'block sequence': 'tools:\n  - Read\n  - Grep\n  - Write',
+        }
+        for label, field in sorted(spellings.items()):
+            tools = parse('---\nname: probe\n%s\n---\n\nbody\n' % field)
+            check('a %s tools: field parses to the grant it makes' % label,
+                  tools == want, 'parsed to %r' % (tools,))
+            writes = sorted(t for t in (tools or []) if t in WRITE_TOOLS)
+            check('a %s tools: field exposes its write tool' % label,
+                  writes == ['Write'], 'writes %r' % (writes,))
+
+        # A key after the block sequence ends it — a description holding a dash
+        # must not be swept up as another tool.
+        tools = parse('---\nname: probe\ntools:\n  - Read\n'
+                      'description: reads things - and nothing else\n---\n\nbody\n')
+        check('a key after a block sequence ends it', tools == ['Read'],
+              'parsed to %r' % (tools,))
+
+        # None means "inherits everything", and every unreadable grant must land
+        # there rather than on the empty list, which reads as "grants nothing".
+        check('no tools: field at all is inherit-everything',
+              parse('---\nname: probe\n---\n\nbody\n') is None)
+        check('an empty tools: field is inherit-everything, not a grant of nothing',
+              parse('---\nname: probe\ntools:\n---\n\nbody\n') is None)
+        check('a tools: field of only separators is inherit-everything',
+              parse('---\nname: probe\ntools: [ , ]\n---\n\nbody\n') is None)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def test_agents():
+    """Every workflow script names agents that exist, the way they register.
+
+    Nothing else covers the workflow scripts. The guard checks what the pipeline
+    produces, not the script that runs it, so a wrong agentType stays invisible
+    until a run reaches the first agent() call — which is after the approval
+    gate, on work that then cannot start.
 
     Plugin agents register namespaced, <plugin>:<agent>. That prefix has twice
-    been dropped from this script and hand-patched back into the installed plugin
+    been dropped from pipeline.js and hand-patched back into the installed plugin
     cache, where the next `claude plugin update` throws it away. Three files have
     to agree and all three are in the repo, so nothing here needs a model or a
     live run.
+
+    Every script under workflow/ is scanned, not just pipeline.js — a second
+    orchestrator that nothing checks is the same failure waiting a second time.
     """
     with open(MANIFEST) as handle:
         plugin = json.load(handle)['name']
@@ -1026,31 +1466,96 @@ def test_agents():
         declared[name] = entry
     check('agents/ is not empty', bool(declared))
 
-    with open(PIPELINE) as handle:
-        source = handle.read()
-    # The trailing delimiter matters: it means a literal and nothing else. Any
-    # concatenation or lookup fails to match and shows up as a count mismatch
-    # below, rather than half-matching and quietly narrowing what is checked.
-    used = re.findall(r"agentType:\s*'([^']*)'\s*[,}\n]", source)
+    scripts = sorted(e for e in os.listdir(WORKFLOW_DIR) if e.endswith('.js'))
+    check('workflow/ holds scripts to check', bool(scripts))
 
-    # A computed agentType would slip past the regex and take the whole check
-    # with it, silently. Every site must be a plain literal for this to mean
-    # anything.
-    check('every agentType in pipeline.js is a plain string literal',
-          len(used) == source.count('agentType:'),
-          '%d agentType keys, %d literals — a computed name escapes this check'
-          % (source.count('agentType:'), len(used)))
-    check('pipeline.js calls agents at all', bool(used))
+    used_by = {}
+    for entry in scripts:
+        with open(os.path.join(WORKFLOW_DIR, entry)) as handle:
+            source = handle.read()
+        # The trailing delimiter matters: it means a literal and nothing else. Any
+        # concatenation or lookup fails to match and shows up as a count mismatch
+        # below, rather than half-matching and quietly narrowing what is checked.
+        refs = re.findall(r"agentType:\s*'([^']*)'\s*[,}\n]", source)
+        used_by[entry] = refs
+
+        # A computed agentType would slip past the regex and take the whole check
+        # with it, silently. Every site must be a plain literal for this to mean
+        # anything.
+        check('every agentType in %s is a plain string literal' % entry,
+              len(refs) == source.count('agentType:'),
+              '%d agentType keys, %d literals — a computed name escapes this check'
+              % (source.count('agentType:'), len(refs)))
+        check('%s calls agents at all' % entry, bool(refs))
 
     registered = set('%s:%s' % (plugin, name) for name in declared)
-    for ref in sorted(set(used)):
-        check('pipeline.js agentType %r resolves' % ref, ref in registered,
-              'nothing registers under that name; expected one of %s' % sorted(registered))
+    for entry in scripts:
+        for ref in sorted(set(used_by[entry])):
+            check('%s agentType %r resolves' % (entry, ref), ref in registered,
+                  'nothing registers under that name; expected one of %s' % sorted(registered))
 
+    everywhere = set()
+    for refs in used_by.values():
+        everywhere.update(refs)
     for name in sorted(declared):
-        check('agent %s is wired into the pipeline' % name,
-              '%s:%s' % (plugin, name) in used,
-              '%s defines it, pipeline.js never calls it' % declared[name])
+        check('agent %s is wired into a workflow' % name,
+              '%s:%s' % (plugin, name) in everywhere,
+              '%s defines it, no script under workflow/ ever calls it' % declared[name])
+
+    # workflow/audit.js runs against a repository that never asked for this
+    # pipeline, on its default branch. Two properties make that safe, and both are
+    # settled here rather than promised in prose: no agent it names is granted a
+    # file-editing tool, and no agent it names is granted a shell. The second one
+    # is what closes the door — a shell can edit, commit, push, and run a test
+    # suite, so without it the first check is only a floor.
+    #
+    # The audited repository is untrusted input. An agent reading a README that
+    # carries instructions aimed at it cannot act on them if the tools are not
+    # there, which is the difference between this and asking it not to.
+    for entry in sorted(READ_ONLY_WORKFLOWS):
+        check('%s exists to be checked' % entry,
+              os.path.exists(os.path.join(WORKFLOW_DIR, entry)),
+              'the read-only guarantee is asserted over a script that is not there')
+        for ref in sorted(set(used_by.get(entry, []))):
+            name = ref.split(':', 1)[-1]
+            if name not in declared:
+                continue  # the resolve check above already failed on this one
+            tools = frontmatter_tools(os.path.join(AGENTS_DIR, declared[name]))
+            if tools is None:
+                check('%s: %s declares its tools readably' % (entry, name), False,
+                      'no tools: field, or one that yields no names — either way it must be '
+                      'read as inheriting every tool, file editing included')
+                continue
+            writes = sorted(t for t in tools if t in WRITE_TOOLS)
+            reads = sorted(t for t in tools if t in READ_TOOLS)
+            execs = sorted(t for t in tools if t in EXEC_TOOLS)
+            check('%s: %s cannot execute the audited repository' % (entry, name),
+                  not execs,
+                  'grants %s — a shell can edit a file, commit, push, and run the test '
+                  'suite, which defeats every prose rule in the prompts at once' % execs)
+
+            # The positive half. The three checks around it ask "is this tool one
+            # of the bad ones"; this one asks "is this tool one of the ones we
+            # meant", which is the only form that survives a spelling nobody
+            # anticipated — a scoped shell, an MCP tool, a tool invented after
+            # this line was written.
+            allowed = AUDIT_WRITE_ONLY_TOOLS if name in WRITE_ONLY_EXEMPT else AUDIT_READ_TOOLS
+            extra = sorted(t for t in tools if t not in allowed)
+            check('%s: %s grants only %s' % (entry, name, ', '.join(allowed)),
+                  not extra,
+                  'also grants %s — an agent audit.js names may hold only the allowlist, '
+                  'because a denylist cannot see a scoped shell such as Bash(git log:*) '
+                  'or an MCP tool that writes' % extra)
+
+            if name in WRITE_ONLY_EXEMPT:
+                # The exemption is itself checked, so it cannot be widened by
+                # quietly granting the scribe a way to read what it overwrites.
+                check('%s: %s is write-only, as its exemption requires' % (entry, name),
+                      bool(writes) and not reads,
+                      'grants %s — an agent that can read the audited repository may not write' % tools)
+                continue
+            check('%s: %s grants no file-editing tool' % (entry, name),
+                  not writes, 'grants %s' % writes)
 
 
 def main():
@@ -1063,6 +1568,8 @@ def main():
     test_default_branch()
     test_hook()
     test_state()
+    test_audit()
+    test_agent_tools()
     test_agents()
     test_lifetime()
     test_version()

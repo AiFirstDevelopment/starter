@@ -7,6 +7,10 @@ Run the steps by hand (`/quorum:1-plan`, `/quorum:2-build`, `/quorum:3-review`,
 happen unattended. `/quorum:status` reads the artifacts on disk and tells you
 which of those you are due to run next.
 
+`/quorum:audit` is the odd one out: point it at a spec and it measures an existing
+repository against it, on the default branch, writing a report of the gaps and no
+code at all — including a repository that never used any of the above.
+
 **Pairs with the `tests` plugin.** The judge must run a regression suite before it
 can reach a verdict; `/tests:run` is how it prefers to do that. Without the `tests`
 plugin the pipeline still works — the judge finds and runs the suite itself — but

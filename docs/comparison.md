@@ -13,12 +13,23 @@ That is the claim. What follows is an honest look at where this pipeline actuall
 sits against the tools it overlaps with, and where it is still weaker than its own
 prose suggests.
 
-Last updated after the history work (v0.10.0).
+Last updated at v0.24.0, after surveying the spec-driven development field.
 
 ## The landscape
 
-Three families overlap with what quorum does, and they are solving different
+Four families overlap with what quorum does, and they are solving different
 problems:
+
+**Spec-driven development tools** — GitHub Spec Kit, Kiro, Tessl, OpenSpec, BMAD,
+MoAI-ADK, GAAI, and roughly a dozen more. This is the family quorum belongs to:
+all of them write intent down before code exists. They differ in what the spec is
+*for*. Spec Kit and Kiro discard it after implementation; OpenSpec keeps it as a
+durable delta-tracked record; Tessl goes furthest and treats code as generated
+output, so the spec is the only thing anyone edits. What almost none of them do is
+stop the agent from rewriting the spec mid-run. GAAI, the closest of them to this
+pipeline in shape — acceptance criteria, autonomous delivery, pull requests — says
+so outright in its own README: *"The framework relies on the agent following the
+files. There is no programmatic enforcement."*
 
 **PR review bots** — CodeRabbit, Greptile, Qodo, Codacy. A pull request appears,
 an LLM reads the diff, inline comments come back. They review; they do not build.
@@ -35,27 +46,38 @@ the critic is measured against is left to you.
 
 ## Where quorum sits
 
-| | PR bots | Autonomous coders | Quorum |
-|---|---|---|---|
-| Measured against | the diff | tests passing | **intent recorded before the code existed** |
-| Reviewers | one pass | self-check | 6 blind lenses, then a judge |
-| Runs the software | no | sometimes | yes, a dedicated lens |
-| Reviews the fixer's own edits | n/a | no | yes, bounded, read-only |
-| Record left behind | inline comments | commit log | append-only reviews + verdict + state, queryable per change |
-| Rules enforced by | prompt | prompt | **prompt, hook, and CI** |
-| Survives a repo's lifetime | yes, by construction | n/a, per task | yes, but it had to be built |
+| | PR bots | Autonomous coders | SDD tools | Quorum |
+|---|---|---|---|---|
+| Measured against | the diff | tests passing | a written spec | **intent recorded before the code existed** |
+| Reviewers | one pass | self-check | usually one QA pass, often none | 6 blind lenses, then a judge |
+| Runs the software | no | sometimes | rarely | yes, a dedicated lens |
+| Reviews the fixer's own edits | n/a | no | no | yes, bounded, read-only |
+| Record left behind | inline comments | commit log | spec files | append-only reviews + verdict + state, queryable per change |
+| Can the agent edit the spec? | n/a | n/a | **yes** | **no — the write is refused** |
+| Rules enforced by | prompt | prompt | prompt (Tessl: regeneration) | **prompt, hook, and CI** |
+| Survives a repo's lifetime | yes, by construction | n/a, per task | **yes — often better than here** | yes, but it had to be built |
+
+The last two rows are the whole argument, and they cut both ways. Enforcement is
+where this pipeline is alone. Durability is where it is behind: OpenSpec's delta
+specs are a better long-term record than a directory of frozen per-change plans.
 
 ## What it does better
 
 **Falsifiable intent, written first.** Acceptance criteria are pre-registered
 before any code exists, in terms someone who did not write the code can check by
-operating the application. This is the single most valuable idea in the system
-and it is close to absent elsewhere. It is the same move as pre-registration in
+operating the application. This is the single most valuable idea in the system.
+It is no longer a rare one — an entire tool family is built on it — but the
+version here is frozen at approval and unwriteable for the duration of the run,
+which is the part that is rare. It is the same move as pre-registration in
 science, and it works for the same reason: it removes the option of deciding
 after the fact what you were trying to do. A tool reviewing only a diff can tell
 you the code is well-written. It cannot tell you it is the wrong feature.
 
-**Nothing grades its own work.** Most systems with a critic stop there. Here the
+**Nothing grades its own work.** Most systems with a critic stop there. The
+exception worth knowing is `agent-review-panel`, whose 4-6 reviewers cross-examine
+each other over several debate rounds before a judge arbitrates — a more elaborate
+panel than this one. It reviews only: it builds nothing, has no spec to measure
+against, and states plainly that it cannot evaluate runtime behaviour. Here the
 builder is reviewed by six lenses, and the judge's own repair commits — written
 last, under time pressure, with nobody waiting — get their own read-only pass.
 The recheck is deliberately bounded: findings are recorded and can force a draft
@@ -142,6 +164,20 @@ and its workflow went months ago is indistinguishable from one that never adopte
 them. Closing that needs a memory of what was once installed — which would be one
 more file that could itself be quietly deleted.
 
+**No durable spec of record.** `docs/work/<slug>/plan.md` is frozen per change
+and then archived. There is no single evolving document describing what the system
+is supposed to do, so nothing measures change N against the intent of changes 1
+through N-1. OpenSpec solved this with delta specs and archives; Spec Kit has
+`constitution.md`; Kiro has steering files. `/quorum:audit` is the piece that could
+close it — pointed at an accumulated spec rather than one supplied by hand — but
+that is not what it does today.
+
+**The narrowest harness support in the family.** Spec Kit, OpenSpec, GAAI, and
+Superpowers all span several agents; OpenSpec claims thirty-odd. This is Claude
+Code only. That is a deliberate trade — the PreToolUse hook and the plugin
+marketplace are exactly what buy the enforcement — but it is a real ceiling on who
+can adopt it.
+
 **Cost.** Up to thirteen agents per run against one pass from a PR bot. This is
 appropriate for a branch you are about to merge and absurd for a typo.
 
@@ -163,14 +199,43 @@ faith.
 writes code, reviews it, and applies fixes. That is the trade being made
 deliberately, but it is a real trade.
 
+**The orchestration is reachable only through one tool, and its absence used to
+be silent.** Every multi-agent claim in this document — six blind lenses, the
+refute pass, the read-only recheck — routes through a Workflow tool that older
+Claude Code releases do not register. When `/quorum:audit` first met a client
+without one, it did not fail. It improvised: it audited the repository from the
+skill's own shell-holding session and wrote a report asserting *"Refutation:
+upheld — read `src/upstream.js` … found none"* for a pass that never happened, and
+the hash verifier exited 0 on it. Nothing downstream could tell that report from a
+real one.
+
+It was caught by the `behavior` lens actually running the command, and only after
+five lenses had read the same code and passed it — which is the argument for that
+lens in one incident. Both call sites are hard stops now. But the lesson
+generalises past the fix: **a pipeline whose guarantees are structural is only as
+honest as its behaviour when the structure is missing**, and the failure mode to
+fear is not the missing dependency, it is the plausible artifact produced in its
+absence. This document's own claims about the panel are worth exactly as much as
+the panel having run.
+
 ## Verdict
 
-Better than anything I am aware of at **faithfulness to stated intent, with a
-record you can audit afterwards** — the axis most tools ignore entirely, because
-most tools never had a statement of intent to be faithful to.
+Having a statement of intent is not the differentiator. Twenty tools have that,
+and several keep it better than this one does.
 
-Not better on cost, not better on measured defect-catching (nobody has measured
-it), and not a substitute for a human reading the pull request. The honest claim
-is narrower than "better": it is a system that makes it hard to quietly ship
-something other than what was asked for, and that leaves behind enough evidence
-to tell when it did.
+The differentiator is one row of the table: **everywhere else the spec is a
+document the agent is asked to honour, and here it is one the agent cannot
+edit** — refused by a hook during the run, re-checked by a script in CI where no
+agent is running at all. A survey of the field puts it plainly: multi-agent
+adversarial review and CI-gated spec enforcement are largely absent, because most
+tools trust adherence rather than enforcing it. That combination — a frozen
+pre-code spec, a blind panel measured against it, one lens that operates the
+software, and machine-checked rules outside the agent's reach — is the thing that
+does not appear to exist elsewhere.
+
+Not better on cost, not better on portability, not better on the long-lived spec,
+and not better on measured defect-catching — nobody in this field has measured
+that, which is a gap available to whoever measures it first. Not a substitute for
+a human reading the pull request. The honest claim is narrower than "better": it
+is a system that makes it hard to quietly ship something other than what was asked
+for, and that leaves behind enough evidence to tell when it did.
