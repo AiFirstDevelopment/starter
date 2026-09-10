@@ -774,6 +774,69 @@ def test_install_ci():
 
 
 
+def test_ci_workflow_checks_the_work_item():
+    """The generated workflow must check the work item, and only fail for cause.
+
+    Three regressions, each of which left a gate that looked configured and
+    enforced nothing:
+
+      * the job had no name, so GitHub reported the check run as "guard" — a
+        string containing no "quorum", which --check-gate cannot recognise, so
+        a correctly configured gate was still reported NOT LIVE;
+      * the checker ran bare, and on the detached HEAD actions/checkout leaves
+        for pull_request it fell back to "if docs/work/ holds exactly one
+        directory, use that" — silently checking nothing once a second work
+        item landed, and reporting clean whatever the verdict claimed;
+      * a branch with no work item exited 2, failing the step, so the gate went
+        red on every pull request that was not a quorum work item.
+
+    These are structural assertions over the generated file. Executing the step
+    would mean spawning a shell, and this suite deliberately spawns only git and
+    python3 — see test_lifetime. The shell itself was verified by running it: on
+    a branch with no work item it prints the slug it derived and exits 0, and on
+    a branch carrying one it reaches the checker with --work-dir.
+    """
+    repo = make_repo()
+    try:
+        git(repo, 'remote', 'set-url', 'origin', 'https://github.com/acme/demo.git')
+        code, out, err = run(['python3', GUARD, '--install-ci'], cwd=repo)
+        check('install-ci succeeds', code == 0, err.strip())
+
+        flow = read(repo, '.github/workflows/quorum-guard.yml')
+        jobs = flow.split('jobs:', 1)[1]
+
+        check('the job is named "quorum guard"',
+              'name: quorum guard' in jobs,
+              'branch protection matches the check-run name, which comes from '
+              'the job; --check-gate looks for the substring "quorum" in it, so '
+              'an unnamed job reports as "guard" and reads as NOT LIVE')
+
+        check('the checker is not invoked bare',
+              'run: python3 .quorum/guard.py' not in flow,
+              'a bare invocation cannot derive the slug on a detached HEAD and '
+              'falls back to a heuristic that stops checking at two work items')
+
+        check('the workflow derives the slug from the ref GitHub supplies',
+              'github.head_ref' in flow and 'SLUG=' in flow,
+              flow[-500:])
+
+        check('and passes it explicitly rather than letting the checker guess',
+              '--work-dir "docs/work/$SLUG"' in flow,
+              flow[-500:])
+
+        check('a branch with no work item is passed, not failed',
+              'exit 0' in flow and 'no quorum work item' in flow,
+              'failing those makes the gate red on every ordinary fix, which '
+              'trains people to override the one check meant to be absolute')
+
+        check('the backslash continuations survived the template',
+              '\\\n' in flow,
+              'CI_WORKFLOW must be a raw string, or python eats the shell line '
+              'continuations and the generated yaml is broken')
+    finally:
+        shutil.rmtree(repo, ignore_errors=True)
+
+
 # ------------------------------------------------------------ the version stamp
 
 def test_version():
@@ -1965,6 +2028,7 @@ def main():
     test_frontmatter()
     test_history()
     test_install_ci()
+    test_ci_workflow_checks_the_work_item()
     test_watch()
 
     failed = [r for r in results if not r[1]]

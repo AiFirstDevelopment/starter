@@ -112,7 +112,7 @@ SKIP_MARKER = re.compile(
 # reports green. It is the quietest way to buy a passing run.
 ONLY_MARKER = re.compile(r'\b(?:it|test|describe|context)\s*\.\s*only\s*\(', re.I)
 
-CI_WORKFLOW = '''# Runs the quorum guard on every pull request.
+CI_WORKFLOW = r'''# Runs the quorum guard on every pull request.
 #
 # This is the only enforcement in the pipeline that no agent can reach: it
 # executes on the CI runner, after the work is done, and a failure here blocks
@@ -125,6 +125,12 @@ on:
 
 jobs:
   guard:
+    # This becomes the check-run name GitHub reports, which is the string
+    # branch protection matches and the substring --check-gate looks for.
+    # Without it the job reports as "guard", which contains no "quorum", so a
+    # correctly configured gate is still reported NOT LIVE. Renaming it
+    # silently disables any branch protection referencing the old name.
+    name: quorum guard
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -134,7 +140,35 @@ jobs:
         with:
           python-version: '3.x'
       - name: Check the work item against the rules
-        run: python3 .quorum/guard.py --base "origin/${{ github.base_ref }}"
+        run: |
+          # actions/checkout leaves a DETACHED HEAD for pull_request events, so
+          # the checker cannot read the branch name and cannot derive the slug.
+          # Left alone it falls back to "if docs/work/ holds exactly one
+          # directory, use that" — which finds the right work item while
+          # exactly one exists and silently stops checking anything once a
+          # second lands, reporting clean whatever the verdict claims.
+          # docs/work/ accumulates one directory per change by design, so that
+          # is a matter of when, not if.
+          REF="${{ github.head_ref || github.ref_name }}"
+          SLUG=$(printf '%s' "$REF" \
+            | sed -E 's#^(feature|fix|chore)/##' \
+            | tr '[:upper:]' '[:lower:]' \
+            | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')
+          echo "branch: $REF"
+          echo "slug:   $SLUG"
+
+          # A branch that never went through /quorum:1-plan has nothing to
+          # check. Failing it would make the gate red on every ordinary fix,
+          # which trains people to override the one check meant to be absolute.
+          if [ -z "$SLUG" ] || [ ! -d "docs/work/$SLUG" ]; then
+            echo "No docs/work/$SLUG — this branch carries no quorum work item."
+            echo "Nothing for the guard to check; passing."
+            exit 0
+          fi
+
+          python3 .quorum/guard.py \
+            --work-dir "docs/work/$SLUG" \
+            --base "origin/${{ github.base_ref || 'main' }}"
 '''
 
 
