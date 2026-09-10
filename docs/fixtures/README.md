@@ -80,3 +80,27 @@ and this is what makes that checkable.
   confirmed: `criteria.md` on disk, no `report.md`, no auditor run.
 - Given `docs/no-such-spec.md`, the command says the file does not exist and
   writes nothing at all.
+
+---
+
+## Not the only fixtures here
+
+`/quorum:calibrate` has its own set, and they live somewhere else on purpose:
+`plugins/quorum/calibration/cases/`. They ship *inside* the plugin because the
+command runs them in an adopting repo, where `docs/` belongs to the adopter.
+
+The two sets answer opposite questions and are built to opposite rules:
+
+| | `audit-demo/` | `calibration/cases/` |
+|---|---|---|
+| Measures | whether `/quorum:audit` works | whether the review panel works |
+| Answer key | this file, deliberately **outside** the fixture | `manifest.json`, **inside** each case |
+| Read by the agent under test | never — it must not find it | never — the lenses are not given it |
+
+The answer keys sit differently because the threat is different. An auditor
+searches the tree it is auditing, so the key has to be outside it. A review lens
+is handed a specific directory and told not to look past it, so the manifest can
+live beside the code it describes — and it must, because a case is only portable
+if it carries its own key.
+
+Both share the rule that matters: **nothing under test may read the answer.**

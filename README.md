@@ -187,6 +187,17 @@ SHA each stage actually inspected — written as each step finishes. The artifac
 say what was decided; they cannot say what has happened since. Both matter, and
 the artifacts stay authoritative wherever the two disagree.
 
+Three of its fields exist because a count could not carry the fact:
+`recheck.status` distinguishes a read-only pass over the judge's commits that
+**ran and found nothing** from one that **never ran** — both record zero
+findings, and those are opposite facts. `build.planDefects` counts `PLAN DEFECT`
+headings specifically, where `deviations` counts build notes of every kind, so
+only the first says anything about whether the plan held up. And
+`verdict.enforcement` mirrors the posture into the index. All three are
+absent-tolerant: a record written before them predates the field, which is not
+the same as zero, clean, or skipped, and every reader says so rather than
+guessing.
+
 ## `/quorum:pipeline` — the autonomous run
 
 Takes an approved plan and delivers the change with no further human involvement.
@@ -381,8 +392,9 @@ An unattended pipeline must fail cleanly rather than grind or paper over:
 - All review lenses fail → throws rather than adjudicating blind
 - A single lens fails → run continues, but the missing lens is reported as an
   **unexamined dimension**, not a clean bill of health
-- Any escalation or unmet criterion forces `ready with follow-ups` or `blocked` —
-  never `ready`
+- An open escalation forces `ready with follow-ups` or `blocked` — never bare
+  `ready`. An **unmet acceptance criterion forces `blocked`**: the change does
+  not do what was agreed, which is a decision for you rather than a note to you
 - Publishing impossible → run still succeeds; the PR body is printed for a human
 
 **A run that ends `blocked` with a clear reason is this pipeline working.** The
@@ -536,7 +548,8 @@ the ones that do not depend on cooperation:
 | `requirements` | *Intent*, *Acceptance criteria*, or *Non-goals* changed since planning |
 | `tests` | a test file deleted, cases removed, or a new `skip` / `only` marker |
 | `reviews` | an existing review file modified or deleted |
-| `verdict` | `ready` over a red suite, with open escalations, or with an unmet criterion |
+| `verdict` | any `ready` outcome over a red suite or with an unmet criterion; bare `ready` alongside open escalations |
+| `posture` | the verdict does not say whether anything independent gated the run, or says it in a way that contradicts `state.json` |
 | `coverage` | a criterion in the plan missing from the verdict, or one the verdict invented |
 | `evidence` | a criterion marked met cites a file, or a line, that does not exist |
 | `branch` | work item artifacts on the default branch, or on a branch other than the one the plan was written on |
@@ -546,6 +559,22 @@ the ones that do not depend on cooperation:
 `only` earns its own row: a single `it.only(...)` disables every other test in the
 file while the run still reports green — the quietest way to buy a passing suite,
 and invisible in a summary line reading "42 passed".
+
+`posture` is the newest, and it exists because of a gap eight completed runs
+made obvious. Whether a `quorum guard` check actually gates the branch was
+recorded in `state.json` and in the pull-request body every single time, and
+appeared in **no** `verdict.md` at all — so the one document a human opens to
+decide whether to trust an adjudication never mentioned whether anything but the
+adjudicating agent had looked. The verdict now carries
+`- **Enforcement:** live | not-live | unknown`, and anything other than `live`
+needs a section saying in plain words what that costs the reader.
+
+The posture never changes the outcome, and that separation is deliberate: a
+repository without branch protection is not thereby producing defective work,
+and folding the two together would mean no adopter without a live gate could
+ever see a clean verdict. It sits *beside* the outcome instead. Verdicts written
+before the field existed are read as predating it rather than failed — the rule
+lands on verdicts a change actually writes.
 
 `enforcement` and `vendored` are the pair that keeps the CI half honest over a
 repo's lifetime, and they cover different failures. `vendored` earns its row for
@@ -763,6 +792,80 @@ python3 plugins/quorum/bin/audit.py --verify docs/audit/<slug>
 Gaps come out phrased as acceptance criteria, and the report ends by naming the
 `/quorum:1-plan` invocation that turns them into a work item — which is where the
 fixing happens, under the ordinary gate, with a human approving the plan.
+
+### `/quorum:calibrate`
+
+Not a step, and not a test. It answers the question the rest of this README has
+been asserting an answer to: **is the six-lens panel any good, and which lens is
+carrying it?**
+
+The run records cannot tell you, and no amount of care with them will. `accepted`
+and `rejected` count adjudications, not defects — a defect three lenses report
+counts three times, and a finding whose diagnosis is accepted while its remedy is
+refused counts as an acceptance. Across eight completed runs that arithmetic
+reads **138 of 144 findings accepted**, which looks like a panel with no false
+positives and is evidence of nothing whatsoever.
+
+The only way out is to know the answer before asking. Fixtures carry defects
+planted in advance; the lenses read them without the manifest; a scorer compares.
+
+```mermaid
+flowchart LR
+  M["manifest.json<br/>planted defects"] --> S["bin/calibrate.py<br/>mechanical matching"]
+  F["calibration/cases/*<br/>code + plan"] --> W["workflow/calibrate.js<br/>six lenses, pipeline's own remits"]
+  W --> R["raw findings"]
+  R --> S
+  S --> O["docs/calibration/&lt;run&gt;/report.md"]
+```
+
+| | |
+|---|---|
+| **Catch rate** | Of the defects planted for a lens, how many that lens found. |
+| **False positives** | Findings at `minor` or above **on clean controls only**. |
+| **Cross-catches** | A lens finding another lens's defect. Reported, never scored. |
+| **Unmatched** | A finding matching no planted defect. **Printed, never judged.** |
+
+**That last row is the discipline the rest depends on.** On a case carrying
+planted defects, an unmatched finding is either a false positive or a real defect
+nobody planted — the fixture cannot tell you which, and a scorer that guessed
+would manufacture exactly the kind of unfalsifiable number this exists to
+replace. Only clean controls yield a false-positive count, because only there is
+it known there was nothing to find. `nit` findings never count against a lens:
+the reviewer prompt invites them, and scoring them would punish obedience.
+
+**It is an eval, and must never enter a suite that has to be green.** Its output
+legitimately varies between runs, and a varying number inside a required check
+gets one of two treatments — the suite goes flaky, or the thresholds get lowered
+until it passes. The second happens quietly and destroys the measurement.
+`selftest.py` asserts calibration is absent from CI, that it spawns only `git`
+and `python3`, and that it *reads* `calibrate.js` without executing it. What it
+does cover is the scorer's arithmetic against findings written by hand, which is
+deterministic and launches no agent.
+
+`calibrate.js` duplicates `pipeline.js`'s lens remits verbatim, because neither
+can import the other, and a test holds them byte-equal. A differently-prompted
+panel is a different panel, and a calibration of one nobody runs is worth
+nothing.
+
+**Two honest limits, stated in the report rather than left to be discovered.**
+The sample is tiny — a catch rate over one or two planted defects is a count, not
+a rate, and a single run is an anecdote. And a planted defect is one somebody
+thought of; the panel's real value is in what nobody thought to plant, which is
+precisely what this cannot measure. `behavior` is unmeasured today for a
+concrete reason: both shipped fixtures are libraries with no runnable surface, so
+the one lens that operates the software is declared unrunnable on both and scored
+on neither. That is a hole in the harness, recorded rather than papered over with
+a fixture that reads code and calls itself `behavior`.
+
+```bash
+# validate the fixtures before spending anything on agents
+python3 plugins/quorum/bin/calibrate.py \
+  --cases plugins/quorum/calibration/cases --validate
+```
+
+Run it after changing a lens remit, the reviewer agent, or the panel's models —
+or when you want to argue about whether six lenses earn their cost with something
+other than an anecdote.
 
 ### Closing an escalation
 

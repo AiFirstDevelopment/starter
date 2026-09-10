@@ -147,6 +147,15 @@ to a pass. That turns "is the gate live" from a question somebody had to think t
 ask into one that gets answered every run. Nobody here can tick the box; a repo
 admin must, and a run does not fail because they have not.
 
+For a while the answer went everywhere except where it was needed. Eight
+completed runs recorded the posture in `state.json` and in the pull-request body
+and named it in **no** `verdict.md` at all — so the one document you open to
+decide whether to trust an adjudication never said whether anything but the
+adjudicating agent had looked. The verdict now carries the posture beside the
+outcome, with a plain-words section whenever it is not `live`, and a `posture`
+rule keeps it there. It still does not change the outcome, because an
+unprotected repository is not thereby producing bad work.
+
 **The orchestrator is barely tested.** `selftest.py` covers the enforcement layer
 thoroughly and covers exactly one thing about `pipeline.js`: that it calls agents
 by names that actually resolve. It knows nothing about whether the prompts say
@@ -187,13 +196,25 @@ deliberately, and asserts it fires — and the suite itself was checked by
 disabling each rule and confirming the tests go red. That is a real measurement
 of the mechanical half.
 
-The half that matters more is still unmeasured. There is no benchmark for
-whether six lenses catch more real defects than one careful pass, and no
-SWE-bench-style number to compare against the autonomous coders. Everything
-about review quality here is a design argument, not a measurement — and design
-arguments are exactly the kind of claim this pipeline was built to distrust.
-Applying its own standard: this system asks you to take its review quality on
-faith.
+The half that matters more is now *measurable*, which is not the same as
+measured. `/quorum:calibrate` runs the lenses over fixtures whose defects are
+planted in advance and reports a catch rate and a false-positive rate per lens.
+Before it existed the question was unfalsifiable in principle: the run records
+count adjudications rather than defects, so a defect three lenses report counts
+three times and eight completed runs read "138 of 144 findings accepted" — a
+number that looks like a flawless panel and establishes nothing.
+
+What the harness does not yet give you is a result worth quoting. Two fixture
+cases is an anecdote, not a benchmark; a planted defect is one somebody thought
+of, while the panel's value is in what nobody thought to plant; and `behavior` —
+the only lens that operates the software — is unmeasured entirely, because both
+shipped fixtures are libraries with nothing to launch. There is still no
+SWE-bench-style number to set against the autonomous coders, and no measurement
+of whether six lenses beat one careful pass.
+
+So the honest position has moved, but not as far as it sounds: this used to ask
+you to take review quality on faith, and now asks you to take it on a small
+sample. The instrument exists and the fixtures are thin.
 
 **The blast radius is a branch.** One approval authorizes an unattended run that
 writes code, reviews it, and applies fixes. That is the trade being made

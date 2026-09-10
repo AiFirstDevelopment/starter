@@ -1,6 +1,6 @@
 ---
 name: guard
-description: Runs the mechanical checks on the current work item - requirements unchanged, no test weakened, reviews append-only, verdict self-consistent, evidence real - and can install them as a CI gate. Reports violations; fixes nothing.
+description: Runs the mechanical checks on the current work item - requirements unchanged, no test weakened, reviews append-only, verdict self-consistent, evidence real, enforcement posture stated - and can install them as a CI gate. Reports violations; fixes nothing.
 ---
 
 # Guard — the rules that are not opinions
@@ -16,7 +16,8 @@ are the ones a machine can settle, so a machine settles them.
 | `requirements` | *Intent*, *Acceptance criteria*, or *Non-goals* changed since the plan was written |
 | `tests` | a test file deleted, test cases removed, or a new `skip` / `only` marker |
 | `reviews` | an existing review file modified or deleted — the record is append-only |
-| `verdict` | `ready` over a red suite, alongside open escalations, or with an unmet criterion |
+| `verdict` | any `ready` outcome over a red suite or with an unmet criterion; bare `ready` alongside open escalations |
+| `posture` | the verdict does not say whether anything independent gated the run, or contradicts `state.json` about it |
 | `coverage` | a criterion in the plan is missing from the verdict, or the verdict invented one |
 | `evidence` | a criterion marked met cites a file, or a line, that does not exist |
 | `branch` | work item artifacts sitting on the default branch |
@@ -24,6 +25,18 @@ are the ones a machine can settle, so a machine settles them.
 `coverage` closes the quietest way to pass: an unmet criterion **omitted** from
 the verdict reads exactly like success. Silence about AC4 is not evidence about
 AC4.
+
+An unmet criterion fails **both** ready outcomes, not just the bare one. The
+follow-ups suffix carries open escalations — work recorded and deferred — not a
+criterion the change does not meet, which is a decision for the user.
+
+`posture` requires the verdict to carry
+`- **Enforcement:** live | not-live | unknown`, plus a section saying what it
+means for the reader whenever it is not `live`. The posture never changes the
+outcome: an unprotected repository is not producing defective work. It is there
+so nobody reads a verdict without learning whether anything but the adjudicating
+agent looked. A verdict this change did not write predates the field and is
+reported as such rather than failed.
 
 `only` deserves its own mention: one `it.only(...)` disables every other test in
 the file while the suite still reports green. It is the quietest way to buy a
