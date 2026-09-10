@@ -388,8 +388,9 @@ An unattended pipeline must fail cleanly rather than grind or paper over:
 **A run that ends `blocked` with a clear reason is this pipeline working.** The
 failure mode it exists to prevent is a green suite bought by deleting a test.
 
-For how this compares to PR review bots and autonomous coding agents — and where
-it is still weaker than it sounds — see [docs/comparison.md](docs/comparison.md).
+For how this compares to the spec-driven development tools, PR review bots, and
+autonomous coding agents — and where it is still weaker than it sounds — see
+[docs/comparison.md](docs/comparison.md).
 
 ## Making successive changes
 
@@ -666,6 +667,103 @@ history.py --limit 10    # the ten most recent
 history.py --json        # for anything you want to compute over
 ```
 
+### `/quorum:audit`
+
+Not a step either, and the only command here that belongs on the default branch.
+It points the discipline at a repository that never used it: give it a spec —
+free text, or a path to a file already in the repo — and it answers one question.
+**Does this repository faithfully implement that spec?** The deliverable is
+`docs/audit/<slug>/report.md`: proposed changes, or `All clear`.
+
+```mermaid
+flowchart TD
+  S["spec — free text,<br/>or a file in the repo"] --> D["derive numbered criteria,<br/>each citing the spec"]
+  D --> C["docs/audit/&lt;slug&gt;/criteria.md<br/>+ a hash of the list"]
+  C --> G{"you confirm<br/>the criteria"}
+  G -- "no" --> X["stop — criteria kept, no report,<br/>no auditing agent has run"]
+  G -- "yes" --> A["N read-only auditors,<br/>one per criterion cluster"]
+  A --> R{"any gap<br/>claimed"}
+  R -- "no" --> P
+  R -- "yes" --> F["refute pass, different model,<br/>tries to prove each gap wrong"]
+  F --> P["report.md — met / gap / unverified"]
+  P --> N["gaps, phrased as criteria<br/>→ /quorum:1-plan"]
+```
+
+**It is safe on `main` because it writes no code.** It proposes and never fixes,
+so there is nothing an approval gate would be protecting: no branch, no commit,
+no push, and `docs/audit/` is the only path `git status --porcelain -uall` shows
+afterwards. The audited repository needs no `plan.md`, no branch, and nothing
+under `docs/work/`.
+
+**Be precise about which half of that is mechanical**, because the difference is
+the whole safety argument. The auditors are granted `Read`, `Grep` and `Glob` and
+no shell, so they cannot edit the repository, commit, push, or run its test suite
+however they are prompted — and `selftest.py` asserts that grant, so it survives
+someone editing the agent without reading this. That matters because the audited
+repository is *untrusted input*: a README carrying instructions aimed at the agent
+reading it cannot be obeyed if the tools are not there.
+
+The skill's own session is **not** covered by that. It holds a shell, it reads the
+spec out of the audited repository, and it is bound by prose. Hardening that path
+is open work, and the criterion says so rather than claiming the stronger
+guarantee.
+
+**It needs a client that registers a Workflow tool.** The orchestration lives in
+`workflow/audit.js` and is reached only that way. Older Claude Code releases do
+not have one — `2.1.19` does not; `2.1.246` does — and on a client without it the
+command **stops and says so**. It does not improvise. That refusal exists because
+the first version did improvise: it audited the repository from the skill's own
+session and wrote a `report.md` asserting refutation passes that never ran, which
+`--verify` happily accepted. If you hit the stop, upgrade:
+
+```bash
+npm i -g @anthropic-ai/claude-code
+```
+
+Every criterion ends with exactly one of three statuses, and none may be omitted
+— a criterion missing from a report reads exactly like one that passed.
+
+| Status | Means | Requires |
+|---|---|---|
+| `met` | the code and tests show it is implemented | a file and a line, or a named test |
+| `gap` | it is not there | the searches that came back empty — patterns and paths |
+| `unverified` | it could not be settled from code and tests alone | the reason, in one sentence |
+
+**More implemented than the spec is never a finding.** Behaviour the repository
+has that the spec does not mention appears nowhere in the report — not as a gap,
+not as an observation, not as a suggestion to remove it. Fidelity to the spec is
+the whole question.
+
+**Negative evidence is the quality risk here, and the refute pass is the answer.**
+Reviewing a diff, a finding is a positive claim with a file and a line. Auditing,
+most findings are *absences*, and "I looked and did not find it" is far easier to
+get wrong: one synonym the codebase happens to prefer and a perfectly implemented
+requirement is reported missing. So every gap carries the searches behind it, a
+gap that names no searches is recorded as `unverified` rather than reported, and
+each surviving claim is put to an agent on a different model whose job is to
+prove it wrong before it reaches you.
+
+**The audit is static, and that costs something real.** It never launches the
+application, builds it, or runs its tests — the target is production code, and
+the alternative makes a production system's safety depend on an agent correctly
+judging that launching was safe. So: this can tell you the code appears to
+implement a requirement; it cannot tell you the software does. Criteria that turn
+on runtime behaviour come back `unverified`, in those words, rather than rounded
+up to `met`.
+
+The criteria are shown to you before anything is audited, and the run stops there
+until you say yes. `criteria.md` records a hash of that list and `report.md` cites
+it, so a report measured against criteria softened after you approved them is
+caught by re-hashing the file:
+
+```bash
+python3 plugins/quorum/bin/audit.py --verify docs/audit/<slug>
+```
+
+Gaps come out phrased as acceptance criteria, and the report ends by naming the
+`/quorum:1-plan` invocation that turns them into a work item — which is where the
+fixing happens, under the ordinary gate, with a human approving the plan.
+
 ### Closing an escalation
 
 The one loop the pipeline cannot close alone. It hands back a decision, the run
@@ -841,6 +939,12 @@ quorum — a delivery pipeline:
   /quorum:history  List every change this repo has planned, oldest first — the
                    prompt that produced it, who planned it, when, where it got to,
                    and where to find its pull or merge request. Reads only.
+  /quorum:audit    Measure this repo against a spec — free text, or a file already
+                   in it — and write docs/audit/<slug>/report.md listing proposed
+                   changes, or "All clear". Shows me the criteria it derived and
+                   stops until I confirm them. Runs on the default branch, writes
+                   no code, never runs the code it audits, and works on a repo
+                   that never used the pipeline.
 
 tests — testing discipline:
   /tests:add       Behavioral tests against the fully assembled app through its
@@ -923,26 +1027,33 @@ starter/
 │   │   ├── agents/               # tool-restricted agents used by the pipeline
 │   │   │   ├── quorum-builder.md
 │   │   │   ├── quorum-reviewer.md
+│   │   │   ├── quorum-auditor.md # read-only; runs nothing it audits
 │   │   │   ├── quorum-scribe.md
 │   │   │   ├── quorum-judge.md
 │   │   │   └── quorum-publisher.md
 │   │   ├── README.md             # the plugin's own reference
 │   │   ├── bin/                  # the enforcement layer — no model involved
 │   │   │   ├── guard.py          # the mechanical rules; vendored into CI
+│   │   │   ├── audit.py          # hashes an audit's criteria list, and verifies it
 │   │   │   ├── history.py        # every work item ever planned, from git
 │   │   │   ├── watch.py          # emits a line when a running item moves
 │   │   │   ├── plan-lock-hook.py # PreToolUse refusal of requirement edits
 │   │   │   ├── state.py          # the state.json recorder
 │   │   │   └── selftest.py       # breaks every rule on purpose, asserts it fires
 │   │   ├── hooks/hooks.json      # wires the plan-lock hook in
-│   │   ├── workflow/pipeline.js  # deterministic orchestration
-│   │   ├── reference/contract.md # the artifact contract
+│   │   ├── workflow/             # deterministic orchestration
+│   │   │   ├── pipeline.js       # build, review, adjudicate, publish
+│   │   │   └── audit.js          # cluster, audit, refute, report — read-only
+│   │   ├── reference/
+│   │   │   ├── contract.md       # the pipeline's artifact contract
+│   │   │   └── audit.md          # the audit's, kept separate on purpose
 │   │   └── skills/
 │   │       ├── pipeline/SKILL.md
 │   │       ├── 1-plan/SKILL.md
 │   │       ├── 2-build/SKILL.md
 │   │       ├── 3-review/SKILL.md
 │   │       ├── 4-quorum/SKILL.md
+│   │       ├── audit/SKILL.md
 │   │       ├── guard/SKILL.md
 │   │       ├── history/SKILL.md
 │   │       └── status/SKILL.md
@@ -955,7 +1066,10 @@ starter/
 │           ├── run/SKILL.md
 │           └── ci/SKILL.md
 ├── .github/                      # CI for this repo's own selftest
-├── docs/comparison.md
+├── docs/
+│   ├── comparison.md
+│   └── fixtures/                 # a controlled repo to operate /quorum:audit against,
+│       └── audit-demo/           # with the expected status of every criterion beside it
 └── README.md
 ```
 

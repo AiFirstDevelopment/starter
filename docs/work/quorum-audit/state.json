@@ -1,0 +1,69 @@
+{
+  "slug": "quorum-audit",
+  "branch": "feature/quorum-audit",
+  "stage": "published",
+  "updated": "2026-08-27T11:56:59Z",
+  "plan": {
+    "acs": 11,
+    "steps": 7,
+    "open": 0,
+    "requirementsHash": "e0d8faf28001a274714e360631e0a610546578c704e8492f1d367361ab614dc9"
+  },
+  "build": {
+    "stepsDone": 7,
+    "deviations": 6,
+    "suite": "green",
+    "head": "7ea8d21"
+  },
+  "review": {
+    "round": 2,
+    "lenses": [
+      "behavior",
+      "correctness",
+      "spec-fidelity",
+      "security",
+      "simplicity",
+      "test-quality"
+    ],
+    "missing": [],
+    "findings": 15,
+    "blockers": 0,
+    "head": "f50bcc0"
+  },
+  "verdict": {
+    "outcome": "blocked",
+    "suite": "green",
+    "accepted": 14,
+    "rejected": 0,
+    "unmet": 9,
+    "escalations": 5,
+    "head": "4f3d595"
+  },
+  "pr": {
+    "url": "https://github.com/AiFirstDevelopment/starter/pull/1",
+    "draft": true
+  },
+  "log": [
+    "2026-08-27T09:51:58Z 2-build built 7/7, 6 deviations (2 PLAN DEFECT), suite green 207/207",
+    "2026-08-27T10:05:24Z panel complete, adjudication started",
+    "2026-08-27T10:26:31Z 4-quorum adjudicated blocked \u2014 13 accepted, 0 rejected, 5 escalations, 10 ACs unmet, suite green 233/233",
+    "2026-08-27T10:52:00Z published draft PR #1 \u2014 blocked; guard clean 0 violations, gate unknown (branch protection unreadable without admin)",
+    "2026-08-27T10:47:15Z 1-plan amended under delegated authority: AC10 reworded (E1), AC11 made mechanical (E3)",
+    "2026-08-27T10:51:46Z 1-plan amended: AC1 specifies git status -uall, found by running the command against the fixture",
+    "2026-08-27T10:52:49Z pipeline re-launched over the escalation delta a22d7e7...HEAD, skipBuild",
+    "2026-08-27T11:21:00Z panel complete, adjudication started",
+    "2026-08-27T11:41:23Z 4-quorum adjudicated blocked \u2014 14 accepted, 0 rejected, 5 escalations, 9 ACs unmet, suite green 258/258",
+    "2026-08-27T11:53:02Z updated draft PR #1 \u2014 blocked; guard clean 0 violations, gate unknown (branch protection needs admin to read)",
+    "2026-08-27T11:56:07Z 1-plan amended under delegated authority: AC11 narrowed to what selftest proves (round 2 E1)",
+    "2026-08-27T11:56:59Z 1-plan amended under delegated authority: AC11 narrowed to what selftest proves (round 2 E1)"
+  ],
+  "recheck": {
+    "findings": 1,
+    "blockers": 0
+  },
+  "guard": {
+    "clean": true,
+    "violations": 0,
+    "gate": "unknown"
+  }
+}
