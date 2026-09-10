@@ -157,4 +157,32 @@ manifest rather than loosening the matcher — the moment matching becomes a
 judgment call, the harness is measuring the matcher.
 
 A clean control declares `"control": true` and `"planted": []`, and must actually
-be clean. Run its tests before trusting it.
+be clean. Run its tests before trusting it — and expect that to be harder than
+it sounds. The first real run of this harness found two genuine defects in a
+control that had been written to be clean and whose suite was green.
+
+### When a control cannot be clean for a lens
+
+`test-quality` is the case that forces this. Its remit is whether a test would
+fail if the behaviour it guards broke, and mutation space is unbounded: for any
+finite suite there is another surviving mutant. Two runs against the shipped
+control produced four such findings and **all four were real**, two of them
+mutation-verified by the lens itself. Counting those would measure the fixture's
+test exhaustiveness rather than the lens's precision.
+
+So a control may declare `notControlFor`, with a `notControlForReason` the
+report prints above the table:
+
+```json
+"notControlFor": ["test-quality"],
+"notControlForReason": "why this lens cannot have a clean control here"
+```
+
+Exempt findings move to *unmatched* — printed, unscored — rather than
+disappearing.
+
+**Reach for this only when a clean control is impossible in principle, not when
+one is inconvenient to write.** It is the knob that lets a harness stop
+measuring the one thing that can count against a lens, so the reason is
+mandatory, `calibrate.py --validate` refuses an exemption without one, and the
+report leads with it.

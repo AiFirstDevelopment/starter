@@ -1,8 +1,14 @@
 {
   "case": "clean-control",
-  "summary": "A small pure function that meets its plan. Nothing is planted; anything a lens reports at minor or above is a false positive.",
+  "summary": "A small pure function that meets its plan. Nothing is planted; a finding at minor or above is a false positive, except from test-quality (see below).",
   "control": true,
-  "unrunnable": ["behavior"],
+  "unrunnable": [
+    "behavior"
+  ],
   "unrunnableReason": "the fixture is a library with no runnable surface; the behavior lens has nothing to launch",
-  "planted": []
+  "planted": [],
+  "notControlFor": [
+    "test-quality"
+  ],
+  "notControlForReason": "test-quality has no achievable clean control. Its remit is whether a test would fail if the behaviour it guards broke, and mutation space is unbounded - for any finite suite there is always another surviving mutant. Two runs of this fixture produced four such findings and all four were confirmed real by mutation, including two the lens mutation-tested itself. Counting them would measure this fixture's test exhaustiveness, not the lens's precision."
 }

@@ -1,0 +1,352 @@
+[
+ {
+  "case": "clean-control",
+  "lens": "behavior",
+  "status": "unrun",
+  "reason": "the fixture is a library with no runnable surface; the behavior lens has nothing to launch"
+ },
+ {
+  "case": "clean-control",
+  "lens": "correctness",
+  "verdict": "clean",
+  "notes": "Scope: src/slug.js and test/slug.test.js (the only two files in the repo).\n\nVerification performed:\n- Ran the suite with `node --test`: 6/6 pass.\n- Traced each AC against the implementation:\n  - AC1: `/[^a-z0-9]+/g -> ' '` collapses runs before `split(' ')`, so consecutive hyphens are unreachable. `.trim()` plus `.filter(Boolean)` remove edge/empty tokens.\n  - AC2: `words.length === 0` guard returns '' for '', '   ', '!!! ???', '---'.\n  - AC3: boundary arithmetic `slug.length + 1 + word.length > MAX_LENGTH` is exact at both edges - 58-char word + 'a' = 60 is kept; 58-char word + 'ab' = 61 is dropped. No off-by-one. Hyphens are only prepended to a non-empty word, so a trailing hyphen cannot occur.\n  - AC4: `words[0].slice(0, MAX_LENGTH)` yields exactly 60 for a 100-char word, including when followed by further words (the loop guard then always breaks).\n  - AC5: `typeof title !== 'string'` throws TypeError for null, undefined, number, object, array, `new String('hi')`, symbol, bigint, boolean. No coercion or instanceof hole.\n  - C1: repo contains only the two files, so no pre-existing duplicate implementation.\n- Fuzzed 200,000 random strings over an alphabet mixing letters, digits, spaces, hyphens, punctuation and 'e-acute'; checked invariants length <= 60, no leading/trailing hyphen, no '--', output matches /^[a-z0-9-]*$/. Zero failures.\n- Untested-but-correct edge cases probed manually: tabs/newlines as separators, non-ASCII (consistent with the stated transliteration non-goal), astral-plane emoji (no lone surrogate leaks into output), leading/trailing whitespace, oversize first word followed by more words.\n\nConsidered and deliberately not reported: for input 'a'x50 + ' ' + 'b'x20 + ' c', the loop breaks at the oversized second word instead of skipping it to fit the trailing 'c'. This is the correct reading of AC3's \"stops at the last whole word that fits\" - skipping would splice non-adjacent words and misrepresent the title. Also considered the header comment \"trimmed to MAX_LENGTH without splitting a word\" being slightly loose against AC4's mandated mid-word cut for an oversize single word; the code follows the AC and the comment describes the cross-word policy, so this is documentation phrasing rather than a defect.\n\nThe function is pure with no I/O or shared state (no race surface) and the regex has no alternation or nested quantifier (no backtracking blowup).",
+  "findings": []
+ },
+ {
+  "case": "clean-control",
+  "lens": "spec-fidelity",
+  "verdict": "clean",
+  "notes": "Verified all five ACs, both non-goals, claim C1, both steps, the test strategy, and the Build notes against the two-file repo (src/slug.js, test/slug.test.js).\n\nAC1: src/slug.js:14 collapses runs of non-alphanumerics to one space; split+filter+single-hyphen join. AC1 explicitly specifies punctuation runs act as word joins, so \"Ada's Notes: Vol. 2\" -> ada-s-notes-vol-2 (test/slug.test.js:12) is specified behavior, not a deviation from the Intent's \"drop everything that is not a letter or digit\". AC2: src/slug.js:19-21 returns '' for '', '   ', '!!! ???', '-', and non-ASCII-only input. AC3: the accumulate-and-break loop at src/slug.js:24-29 yields a maximal word-boundary prefix; I checked both halves independently over 200k fuzzed titles (every truncated result is a prefix of the untruncated slug ending on a word boundary, and appending the next word would always exceed 60); no output exceeded 60 chars or ended in a hyphen. AC4: src/slug.js:23 slices the first word to exactly MAX_LENGTH. AC5: src/slug.js:8-10 throws TypeError for null, undefined, number, object, array, symbol, and boxed new String('hi').\n\nNon-goals respected: slugify('Cafe Munster' with accents) -> caf-m-nster, so no transliteration was built; the function is pure with no registry/counter, so no uniqueness handling was built.\n\nC1 (\"Nothing else in the repository already does this\") is true - the repo contains exactly two files, no hidden files, no competing slug implementation. S1/S2 complete; slugify and MAX_LENGTH are exported at src/slug.js:33 and each AC has at least one test. Test strategy accurate: tests import through the module surface via require('../src/slug'). All 6 tests pass under `node --test`. Build notes say \"Built as planned\" and I found no deviations and nothing built beyond the plan. No PLAN DEFECT notes present.\n\nOnly cosmetic observation, deliberately not filed as a finding: the plan's Status is \"built\" while the AC/step/claim checkboxes are still unchecked. That is bookkeeping in the plan document, not a defect in the change.",
+  "findings": []
+ },
+ {
+  "case": "clean-control",
+  "lens": "security",
+  "verdict": "clean",
+  "notes": "Scope: entire snapshot is two files, src/slug.js (33 lines) and test/slug.test.js. Reviewed as a first-time reader; claims verified by execution, not by reading the plan.\n\nInjection/output containment: src/slug.js:14 collapses all non-[a-z0-9] to space AFTER toLowerCase(), making the output alphabet closed under [a-z0-9-]. Verified with a 200,000-case fuzz over the full Unicode range (including astral plane) plus targeted hostile inputs, asserting the output matches ^$|^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ and length <= MAX_LENGTH. Zero violations. Examples: '../../etc/passwd' -> 'etc-passwd'; 'a\\r\\nSet-Cookie: x=1' -> 'a-set-cookie-x-1'; embedded NUL stripped; '<script>alert(1)</script>' reduced to alphanumerics. No path traversal, CRLF/header splitting, XSS metacharacters, or null bytes can survive. Unicode case-folding expansions (U+0130, ligatures, roman numerals, sharp-s) do not smuggle characters through because the filter is a whitelist applied post-fold.\n\nReDoS: /[^a-z0-9]+/g at src/slug.js:14 is a single character class with one quantifier - no nesting or alternation, so no catastrophic backtracking. Measured linear: 1MB alternating 'a!' ~80ms, 1MB punctuation ~1.3ms, 1MB single word ~0.9ms.\n\nSlice safety: src/slug.js:23 slices a string already reduced to [a-z0-9], so it cannot split a surrogate pair or emit a lone surrogate into a URL.\n\nError disclosure: the TypeError at src/slug.js:9 uses a fixed message ('slugify expects a string') and does not interpolate the offending value, so a caller logging the exception cannot leak caller-supplied content.\n\nDependency risk: no package.json and no third-party dependencies; the test imports only node:assert and node:test. Zero supply-chain surface.\n\nNot applicable in this change: no authentication, authorization, deserialization, secret material, network, or filesystem surface - the module is a pure function with no I/O.\n\nConsidered and deliberately dropped: an all-non-ASCII title yields '' (mandated by AC2 at plan.md:17-18), which a hypothetical consumer could interpolate into '/articles/' and hit a collection endpoint. No consumer exists in the snapshot and uniqueness is an explicit non-goal, so I cannot state specific inputs producing a wrong result within this change - that is a suspicion about an absent caller, not a finding.\n\nTest suite passes 6/6 under `node --test`. No files were modified.",
+  "findings": []
+ },
+ {
+  "case": "clean-control",
+  "lens": "simplicity",
+  "verdict": "findings",
+  "notes": "Snapshot is two files, 67 lines. No duplication, no needless abstraction, no dead code beyond the single inert `.trim()`, and no unused exports (`MAX_LENGTH` is consumed by test/slug.test.js:22,29). Plan claim C1 (\"nothing else in the repository already does this\") is true \u2014 these are the only two files, so there is nothing to reuse. All six tests pass under `node --test` and each maps to a distinct acceptance criterion with no redundant cases. Considered and dropped one candidate: test/slug.test.js:22-23 assert length and no-trailing-hyphen, which are logically subsumed by the exact-value assert on line 24 \u2014 but they document AC3's two clauses independently of the literal, so that is preference rather than a defect.",
+  "findings": [
+   {
+    "id": "simplicity-1",
+    "file": "src/slug.js",
+    "line": 15,
+    "severity": "nit",
+    "title": "The `.trim()` on src/slug.js:15 is an inert call, and the four-step tokenising chain (lines 13-17) is equivalent to a single regex split.",
+    "summary": "`.replace(/[^a-z0-9]+/g, ' ')` collapses every non-alphanumeric run to exactly one space, so `.split(' ')` can only ever yield a leading and/or trailing empty segment \u2014 and `.filter(Boolean)` on line 17 already removes those. `.trim()` therefore cannot change the value of `words` for any input. The whole chain `.replace(...).trim().split(' ').filter(Boolean)` reduces to `.split(/[^a-z0-9]+/).filter(Boolean)`.",
+    "failure_scenario": "No output changes \u2014 that is the point: the call is dead. Verified exhaustively by comparing the current chain, the chain with `.trim()` removed, and `title.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)` over all 4681 strings of length 0-4 over the alphabet {' ', 'a', '1', '!', '-', '\u00e9', '\\t', 'Z'} (covering AC2's empty and punctuation-only inputs, non-ASCII, and whitespace padding): zero mismatches. Concretely, for `slugify('  Hello  World  ')` the intermediate is `' hello world '`; with `.trim()` the split yields `['hello','world']`, without it `['','hello','world','']`, which `.filter(Boolean)` reduces to the same `['hello','world']`. The cost is to the reader: confirming AC2's empty-slug path currently requires reasoning through three overlapping guards (trim, filter, and the `words.length === 0` branch) where one suffices."
+   }
+  ]
+ },
+ {
+  "case": "clean-control",
+  "lens": "test-quality",
+  "verdict": "findings",
+  "notes": "Ran the suite (6/6 pass, node v20.16.0) and mutation-tested a scratchpad copy; the reviewed tree was never modified (hashes/timestamps unchanged). No flakiness risk found: all tests are pure, deterministic calls with no clock, network, randomness, ordering dependence, or shared state. Every acceptance criterion (AC1-AC5) has at least one test, and assertions go through the module surface rather than implementation internals. Killed mutants include the first-word `slice(0, MAX_LENGTH - 1)` off-by-one. Removing `.trim()` at src/slug.js:15 also survives, but that mutant is behaviorally equivalent given the `filter(Boolean)` on the following line, so I did not report it. The repo has no package.json or test-runner config, so the suite must be invoked as `node --test test/`; I judged that build/infra rather than test-quality and left it out.",
+  "findings": [
+   {
+    "id": "TQ1",
+    "file": "test/slug.test.js",
+    "line": 33,
+    "severity": "minor",
+    "title": "The AC5 test cannot fail if the behavior it guards is removed: it passes identically with the explicit TypeError guard deleted, because the chosen input (null) throws a native TypeError anyway.",
+    "summary": "`assert.throws(() => slugify(null), TypeError)` only checks the error constructor, and `null` is the one input class that produces a `TypeError` with or without the guard at src/slug.js:8-10 (`null.toLowerCase()` -> \"Cannot read properties of null\"). I verified this by deleting lines 8-10 in a scratchpad copy: all 6 tests still pass.",
+    "failure_scenario": "Delete the guard at src/slug.js:8-10 (e.g. during a refactor that 'trusts callers'). The suite stays green at 6/6. But `slugify(new String('Ada Lovelace'))` now returns 'ada-lovelace' instead of throwing, silently violating AC5 ('When the input is not a string, slugify throws a TypeError') for every boxed-string or duck-typed input. Verified: with the guard it throws TypeError('slugify expects a string'); without it, it returns 'ada-lovelace'."
+   },
+   {
+    "id": "TQ2",
+    "file": "test/slug.test.js",
+    "line": 22,
+    "severity": "minor",
+    "title": "AC3's fit-exactly boundary is untested, so an off-by-one at the length comparison in slugify passes the whole suite.",
+    "summary": "The only truncation test builds a slug of length 50 whose next candidate word would reach 65 -- it never exercises a word that fits at exactly MAX_LENGTH, so the `>` in `src/slug.js:25` (`slug.length + 1 + word.length > MAX_LENGTH`) is never probed at its boundary. I changed `>` to `>=` in a scratchpad copy and all 6 tests still passed.",
+    "failure_scenario": "Change src/slug.js:25 from `>` to `>=`. Suite stays green at 6/6. Then `slugify('a'.repeat(30) + ' ' + 'b'.repeat(29))` returns a 30-character slug instead of the correct 60-character one, dropping a word that fits exactly and violating AC3 ('the slug stops at the last whole word that fits'). Verified: real code returns length 60, the mutant returns length 30."
+   }
+  ]
+ },
+ {
+  "case": "token-refresh",
+  "lens": "behavior",
+  "status": "unrun",
+  "reason": "the fixture is a library with no runnable surface; the behavior lens has nothing to launch"
+ },
+ {
+  "case": "token-refresh",
+  "lens": "correctness",
+  "verdict": "findings",
+  "notes": "All findings were confirmed by executing the modules from a scratch script outside the repo (no files in the repo were modified). The existing suite passes (2/2) while AC1, AC3-adjacent crash paths, AC4 and AC5 are all broken, because both tests assert only truthiness. Verified observations: REFRESH_WINDOW_MS is 300000 (5 min); a token with a deliberately wrong MAC refreshes successfully; sub:'nope' throws TypeError \"Cannot read properties of undefined (reading 'disabled')\"; a token that expired 30 days ago yields refreshed:true; describeSession returns the raw usable token; 'not-a-token' throws SyntaxError; a token with no exp throws RangeError \"Invalid time value\".",
+  "findings": [
+   {
+    "id": "C1",
+    "file": "src/tokens.js",
+    "line": 14,
+    "severity": "blocker",
+    "title": "Plan C1: \"verify rejects a token whose MAC does not match its body\", and AC4: \"When a token's signature does not match its body, refreshing fails and nothing is looked up.\"",
+    "summary": "verify() never computes or compares the HMAC. It splits on '.', discards the mac segment entirely, base64url-decodes the body and JSON.parses it. Any body with any (or no) trailing mac is accepted.",
+    "failure_scenario": "Executed: sign({sub:'u1', exp: now+1000}) produces 'BODY.MAC'; replacing the MAC with 'AAAA...A' and calling refreshSession(forged, now) returns {refreshed:true} with a freshly minted valid token instead of failing, and findUser was called along the way. AC4 fails on both counts. Worse, an attacker constructs base64url(JSON.stringify({sub:'u1',exp:0})) + '.x' with no knowledge of SESSION_SECRET and is handed a genuine signed one-hour token for another account \u2014 this also defeats AC3, since the holder of disabled account u2 simply claims sub:'u1'."
+   },
+   {
+    "id": "C2",
+    "file": "src/session.js",
+    "line": 6,
+    "severity": "blocker",
+    "title": "AC1: \"When a request carries a token expiring within ten minutes, the response carries a new token and refreshed: true.\" Plan step S1: \"Add refreshSession with the ten-minute window.\"",
+    "summary": "REFRESH_WINDOW_MS is 5 * 60 * 1000 (five minutes), half the window the plan specifies. The comparison at line 20 therefore declines to refresh tokens that expire between five and ten minutes out.",
+    "failure_scenario": "Executed: refreshSession(sign({sub:'u1', exp: now + 7*60*1000}), now) returns {token: <the same incoming token>, refreshed: false}. AC1 requires a new token and refreshed:true for anything expiring within ten minutes, so every request in the 5-10 minute band is left with a token that dies mid-task \u2014 exactly the intent the plan opens with."
+   },
+   {
+    "id": "C3",
+    "file": "src/session.js",
+    "line": 16,
+    "severity": "major",
+    "title": "Plan C2: \"findUser returns a user for every id that reaches it.\"",
+    "summary": "findUser is a Map.get (src/users.js:9) that returns undefined for any unknown id, and refreshSession dereferences the result with no null check. describeSession has the identical hole at line 32 (user.email).",
+    "failure_scenario": "Executed: refreshSession(base64url('{\"sub\":\"nope\",\"exp\":<now+1000>}') + '.x', now) throws TypeError: Cannot read properties of undefined (reading 'disabled'). Because verify performs no MAC check (C1), any unauthenticated caller can reach this with an arbitrary sub, turning a bad token into an uncaught TypeError (a 500 rather than a 401). The same input to describeSession throws on user.email. Plan claim C2 is simply false against src/users.js:9."
+   },
+   {
+    "id": "C4",
+    "file": "src/session.js",
+    "line": 36,
+    "severity": "blocker",
+    "title": "AC5: \"The admin console can describe a live session \u2014 whose it is and when it expires \u2014 without exposing anything that would let the reader use it.\"",
+    "summary": "describeSession returns `token: rawToken` \u2014 the complete, still-valid bearer token \u2014 alongside the email and expiry.",
+    "failure_scenario": "Executed: describeSession(sign({sub:'u1', exp: now+1000})) returns {user:'ada@example.com', expires:'...', token:'eyJzdWIi...NKqXGN1o...'}. That token string is exactly what refreshSession accepts, so any admin-console reader (or anything that logs/renders the console payload) can replay it to act as ada@example.com and, via refreshSession, extend it indefinitely. AC5 explicitly forbids returning anything usable."
+   },
+   {
+    "id": "C5",
+    "file": "src/session.js",
+    "line": 20,
+    "severity": "major",
+    "title": "Intent: refresh a token that is \"close to expiring\"; \"leave it alone\" otherwise.",
+    "summary": "The only expiry test is `claims.exp - now > REFRESH_WINDOW_MS`. A token whose exp is already in the past makes that difference negative, so it falls through to the mint branch. Nothing anywhere rejects an expired token.",
+    "failure_scenario": "Executed: refreshSession(sign({sub:'u1', exp: now - 30*24*3600*1000}), now) \u2014 a token that expired thirty days ago \u2014 returns {refreshed:true} with a brand-new one-hour token. A session token that leaked a month ago, or belongs to a user who was logged out by expiry, is silently resurrected, and can be resurrected again every hour forever. Expiry never actually ends a session."
+   },
+   {
+    "id": "C6",
+    "file": "src/tokens.js",
+    "line": 16,
+    "severity": "major",
+    "title": "src/session.js:10-11: \"The caller passes whatever arrived on the request; nothing upstream has validated it yet.\"",
+    "summary": "verify does no shape validation on the decoded payload: Buffer.from(x,'base64url') never throws on non-base64 input, JSON.parse throws a raw SyntaxError on the resulting bytes, and a payload of `null` or a bare number/string parses into a non-object that callers then dereference. describeSession compounds this at src/session.js:35, where new Date(undefined).toISOString() throws RangeError.",
+    "failure_scenario": "Executed, all on input the module's own comment says is untrusted: refreshSession('not-a-token', now) throws SyntaxError: Unexpected token '\ufffd' ... is not valid JSON; refreshSession(base64url('null') + '.x', now) throws TypeError: Cannot read properties of null (reading 'sub'); describeSession(sign({sub:'u1'})) throws RangeError: Invalid time value. Each is an uncaught internal error class rather than an authentication failure, so a caller cannot distinguish \"bad token\" from \"server bug\" and will surface 500s for ordinary malformed input."
+   },
+   {
+    "id": "C7",
+    "file": "test/session.test.js",
+    "line": 12,
+    "severity": "minor",
+    "title": "Plan S3: \"Cover both with tests\"; test strategy: \"test/session.test.js drives both functions through the module surface.\"",
+    "summary": "Both tests assert only truthiness (assert.ok(result.token), assert.ok(result)) and both use exp = now + 1000. Neither asserts the refreshed flag, that the token changed, the disabled path, the bad-MAC path, or the describeSession field set.",
+    "failure_scenario": "Ran `node --test test/`: 2 pass, 0 fail \u2014 while the five defects above are all live. Specifically, assert.ok(result.token) at line 12 is satisfied by the no-refresh branch returning the original token, so the suite would still pass if REFRESH_WINDOW_MS were set to 0 and AC1 were violated for every input; and exp = now + 1000 sits inside both the 5- and 10-minute windows, so it cannot detect the wrong window. The suite gives no evidence for any acceptance criterion."
+   }
+  ]
+ },
+ {
+  "case": "token-refresh",
+  "lens": "spec-fidelity",
+  "verdict": "findings",
+  "notes": "Reviewed the snapshot at /Users/joelstevick/starter/plugins/quorum/calibration/cases/token-refresh/repo against plan.md. Four of the five acceptance criteria fail (AC1, AC4, AC5 outright; AC3 holds only for the two seeded users). Both numbered Approach claims (C1, C2) are false against the code, and neither is escalated as a PLAN DEFECT \u2014 the plan's Build notes say only \"Built as planned\", which is itself inaccurate given the five-minute window. Non-goal \"Rotating the signing secret\" was respected. I verified each item by executing the module (scripts kept in the session scratchpad; the repo tree was not modified). Confirmed observations: REFRESH_WINDOW_MS is 300000 (5 min); a token expiring in 8 minutes returns refreshed=false; a token with a bogus MAC is accepted and yields a freshly minted valid token; refreshSession with an unknown sub throws TypeError \"Cannot read properties of undefined (reading 'disabled')\"; describeSession echoes the raw token; the two-test suite passes green through all of it. I did not report src/users.js getUserById (dead, self-declared uncalled duplicate of findUser added after module.exports) as a finding \u2014 it violates no criterion and belongs to another lens.",
+  "findings": [
+   {
+    "id": "SF1",
+    "file": "src/session.js",
+    "line": 6,
+    "severity": "blocker",
+    "title": "AC1 requires the refresh window to be ten minutes; the implementation uses five, so tokens expiring between five and ten minutes out are not refreshed.",
+    "summary": "REFRESH_WINDOW_MS is 5 * 60 * 1000 and the comparison at line 20 returns the original token unchanged whenever claims.exp - now exceeds it. The plan's AC1 and step S1 both specify ten minutes, and Build notes claim 'Built as planned' with no recorded deviation.",
+    "failure_scenario": "Executed against the real module: sign({sub:'u1', exp: now + 8*60*1000}) then refreshSession(token, now) returns {refreshed: false, token: <same token>}. AC1 demands refreshed: true and a new token. A user whose token expires in six to ten minutes is silently denied the refresh and is logged out mid-task eight minutes later - the exact outcome the Intent section says must not happen."
+   },
+   {
+    "id": "SF2",
+    "file": "src/tokens.js",
+    "line": 16,
+    "severity": "blocker",
+    "title": "AC4 and claim C1 both assert that a token whose MAC does not match its body is rejected; verify() never checks the MAC at all.",
+    "summary": "verify() splits on '.', discards the MAC segment entirely, and JSON-parses the base64url body. sign() computes an HMAC that nothing ever validates. C1 ('verify rejects a token whose MAC does not match its body') is false as written, and no PLAN DEFECT note was raised.",
+    "failure_scenario": "Executed against the real module: body = base64url(JSON.stringify({sub:'u1', exp: now+1000})), forged = body + '.bogus'. refreshSession(forged, now) does not throw - it calls findUser('u1') and returns {refreshed: true} with a newly minted, correctly signed one-hour token. AC4 requires refreshing to fail and 'nothing is looked up'; both halves are violated. Anyone who can craft a JSON body can mint a valid session for any account, so AC3 is also bypassable: the attacker simply chooses a sub that is not disabled."
+   },
+   {
+    "id": "SF3",
+    "file": "src/session.js",
+    "line": 36,
+    "severity": "blocker",
+    "title": "AC5 requires describing a session without exposing anything that would let the reader use it; describeSession returns the raw session token.",
+    "summary": "The returned object includes token: rawToken alongside user and expires. The plan's AC5 explicitly scopes the admin view to 'whose it is and when it expires'.",
+    "failure_scenario": "Executed against the real module: describeSession(validToken) returns {\"user\":\"ada@example.com\",\"expires\":\"2026-09-10T11:28:55.163Z\",\"token\":\"eyJzdWIiOiJ1MSIsImV4cCI6...\"}. Any admin-console operator, log sink, or browser devtools capture of that response now holds a live bearer token for ada@example.com and can impersonate her until it expires - and can feed it straight back to refreshSession to extend it indefinitely."
+   },
+   {
+    "id": "SF4",
+    "file": "src/users.js",
+    "line": 9,
+    "severity": "major",
+    "title": "Claim C2 ('findUser returns a user for every id that reaches it') is false; findUser returns undefined for any unknown id and refreshSession dereferences it unguarded.",
+    "summary": "findUser is USERS.get(id), which yields undefined for ids outside the two seeded entries. src/session.js:16 reads user.disabled and src/session.js:32 reads user.email with no null check, relying entirely on C2. C2 is contradicted by the code and no PLAN DEFECT note was filed.",
+    "failure_scenario": "Executed against the real module: refreshSession(sign({sub:'u99', exp: now+1000}), now) throws TypeError 'Cannot read properties of undefined (reading \\'disabled\\')' rather than a controlled auth failure. Combined with SF2 the sub is fully attacker-controlled, so an unauthenticated request with a hand-built body crashes the refresh handler on demand; even with signature checking fixed, any user deleted from the store after issuance turns every subsequent request into an unhandled TypeError instead of a clean 401."
+   },
+   {
+    "id": "SF5",
+    "file": "test/session.test.js",
+    "line": 8,
+    "severity": "major",
+    "title": "Step S3 ('Cover both with tests') and the Test strategy are nominally satisfied but no test exercises any acceptance criterion, so the suite passes green while AC1, AC4 and AC5 all fail.",
+    "summary": "Both tests assert only truthiness - assert.ok(result.token) and assert.ok(result) - and both use exp = now + 1000, a value inside every candidate window. Nothing asserts refreshed, nothing tests the ten-minute boundary (AC1/AC2), the disabled account (AC3), a mismatched MAC (AC4), or the absence of a token in the describeSession payload (AC5).",
+    "failure_scenario": "`node --test test/` reports '# pass 2, # fail 0' on this tree, which simultaneously refreshes at five minutes instead of ten, accepts a token signed with the string 'bogus', and hands the caller's live token back to the admin console. The suite therefore certifies as done a change that meets one of five acceptance criteria, and would not catch a regression on any of them."
+   },
+   {
+    "id": "SF6",
+    "file": "src/session.js",
+    "line": 25,
+    "severity": "minor",
+    "title": "refreshSession writes the login record on every refresh, behavior the plan's Approach never describes and which corrupts the login audit trail the non-goal fenced off.",
+    "summary": "await recordLogin(user.id, { token, at: now }) sets user.lastLogin on each successful refresh. The plan describes refreshSession as verifying the token, loading the account, and minting a replacement - no store write - and lists 'Any change to how sessions are created at login' under Non-goals. Build notes record no deviation.",
+    "failure_scenario": "u1 signs in at 09:00 and works until 17:00 while the client refreshes hourly. USERS.get('u1').lastLogin is now {at: 17:00, ...}, so an admin or security review reading last-login sees 17:00 and can no longer tell when the session actually began - the refresh path silently overwrote a login-time record. The write also stores the raw session token in the user record in plaintext, extending the AC5 exposure to anyone reading the user store."
+   }
+  ]
+ },
+ {
+  "case": "token-refresh",
+  "lens": "security",
+  "verdict": "findings",
+  "notes": "Scope: all four files under the repo snapshot. Findings SEC-1 through SEC-3 were confirmed by executing `src/session.js` from an out-of-tree scratch script (no files in the repo were created, modified, or removed).\n\nNot reported, as they fall outside the security lens or fail closed: `findUser` returning `undefined` for an unknown `sub` causes `TypeError: Cannot read properties of undefined (reading 'disabled')` at src/session.js:16 \u2014 this falsifies plan claim C2 and is a crash, but it denies rather than grants access, so it belongs to the correctness lens. Likewise `REFRESH_WINDOW_MS = 5 * 60 * 1000` at src/session.js:6 contradicts AC1's ten-minute window, and the two tests in test/session.test.js assert only truthiness and cover neither AC3 nor AC4 \u2014 both are correctness/test-coverage concerns, not security ones.\n\nRelevant files:\n/Users/joelstevick/starter/plugins/quorum/calibration/cases/token-refresh/repo/src/tokens.js\n/Users/joelstevick/starter/plugins/quorum/calibration/cases/token-refresh/repo/src/session.js\n/Users/joelstevick/starter/plugins/quorum/calibration/cases/token-refresh/repo/src/users.js",
+  "findings": [
+   {
+    "id": "SEC-1",
+    "file": "src/tokens.js",
+    "line": 15,
+    "severity": "blocker",
+    "title": "`verify` never checks the HMAC it decodes, so any attacker-chosen claims are accepted as an authenticated session.",
+    "summary": "`verify(token)` splits on `.`, keeps only the first segment, base64url-decodes it and `JSON.parse`s it. The `mac` segment produced by `sign` at line 9 is discarded and never recomputed or compared. The function's own comment (\"Decode a token's claims\") is accurate, but `src/session.js:13` and `:31` call it as if it authenticated the caller, and the plan's C1/AC4 assert that it rejects a body/MAC mismatch.",
+    "failure_scenario": "Verified by executing the module. With no knowledge of `SESSION_SECRET`, an attacker sends `base64url('{\"sub\":\"u1\",\"exp\":<now+1000>}') + '.not-a-real-mac'` to `refreshSession`. Instead of rejecting it, the call returns `{\"token\":\"eyJzdWIiOiJ1MSIsImV4cCI6...\",\"refreshed\":true}` \u2014 a token that is genuinely HMAC-signed with the real secret. The forgery is laundered into a valid credential for any `sub` the attacker names, and `recordLogin` is invoked for that account. Complete authentication bypass; AC4 and C1 are false."
+   },
+   {
+    "id": "SEC-2",
+    "file": "src/session.js",
+    "line": 20,
+    "severity": "blocker",
+    "title": "`refreshSession` never rejects an already-expired token, so any expired session can be renewed indefinitely.",
+    "summary": "The only test on `claims.exp` is `if (claims.exp - now > REFRESH_WINDOW_MS) return { refreshed: false }`. When `exp` is in the past that difference is negative, the guard is false, and control falls through to line 24, which mints a fresh one-hour token. There is no `claims.exp <= now` check anywhere in the module.",
+    "failure_scenario": "Verified by executing the module. A token whose `exp` is 90 days in the past (`{\"sub\":\"u1\",\"exp\":now - 90*24*3600*1000}`) is passed to `refreshSession`; it returns `refreshed: true` with a new token valid for another hour. A session token stolen from a log, a backup, or an old browser profile long after it lapsed is a permanent foothold \u2014 expiry never terminates a session. Independent of SEC-1: this still holds after MAC verification is added, because the token's signature is valid."
+   },
+   {
+    "id": "SEC-3",
+    "file": "src/session.js",
+    "line": 36,
+    "severity": "major",
+    "title": "`describeSession` returns the raw bearer token to the admin console, directly contradicting AC5.",
+    "summary": "The response object is `{ user, expires, token: rawToken }`. AC5 requires describing a live session \"without exposing anything that would let the reader use it\", but the raw token is exactly the credential \u2014 anyone who reads it can replay it to authenticate as that user.",
+    "failure_scenario": "Verified by executing the module: `describeSession(token)` returns `{\"user\":\"ada@example.com\",\"expires\":\"2026-09-10T10:28:59.425Z\",\"token\":\"eyJzdWIiOiJ1MSIsImV4cCI6...\"}`. An admin-console operator with read-only visibility (or anyone who reads the console's HTTP response, browser devtools, proxy log, or APM trace where this payload lands) now holds a working session token for ada@example.com and can act as her. AC5 is violated as written."
+   },
+   {
+    "id": "SEC-4",
+    "file": "src/tokens.js",
+    "line": 5,
+    "severity": "major",
+    "title": "The signing secret silently falls back to the hardcoded literal `'dev-secret'` when `SESSION_SECRET` is unset.",
+    "summary": "`const SECRET = process.env.SESSION_SECRET || 'dev-secret'` is evaluated once at module load. A missing or empty-string environment variable produces no error, no warning, and no startup failure \u2014 just a signing key that is published in this source file.",
+    "failure_scenario": "A deployment where `SESSION_SECRET` is absent from the environment (typoed variable name, secret-manager fetch that yields an empty string, a container started without its env file) boots and serves traffic normally. Once SEC-1 is fixed and MACs are actually checked, that check is worthless: anyone reading this repository can run `sign({sub:'u1', exp: <far future>})` with `'dev-secret'` and mint tokens that verify, for any account. The failure is silent \u2014 nothing in the system distinguishes it from a correctly configured deploy."
+   },
+   {
+    "id": "SEC-5",
+    "file": "src/session.js",
+    "line": 25,
+    "severity": "minor",
+    "title": "The newly minted session token is persisted in plaintext on the in-memory user record.",
+    "summary": "`recordLogin(user.id, { token, at: now })` passes the live token, and `src/users.js:14` assigns it as `user.lastLogin`. The record is the same object returned by `findUser`, and `USERS` is exported from `src/users.js:18`.",
+    "failure_scenario": "After any successful refresh, the user object held in `USERS` carries a live one-hour credential under `lastLogin.token`. Any caller that serializes a user object \u2014 a `JSON.stringify(user)` in an admin endpoint, a debug log line, an error report that includes the looked-up user, or a heap/state dump \u2014 leaks a usable session token for that account to whoever reads that output. Nothing about the storage marks the field as secret, so the leak is invisible at the point where the serialization is written."
+   }
+  ]
+ },
+ {
+  "case": "token-refresh",
+  "lens": "simplicity",
+  "verdict": "findings",
+  "notes": "Scope: everything under /Users/joelstevick/starter/plugins/quorum/calibration/cases/token-refresh/repo (src/session.js, src/tokens.js, src/users.js, test/session.test.js), read as a single change against plan.md.\n\nOne finding. Things I looked at under this lens and deliberately did not report:\n\n- src/session.js:14-15 and :31-32 repeat the two-line prelude `verify(rawToken)` then `await findUser(claims.sub)` in both `refreshSession` and `describeSession`. Two lines shared between two functions is not worth a helper; extracting it would be the needless abstraction this lens is supposed to catch, not a cure for it. Not a finding.\n- src/session.js:40 exports `REFRESH_WINDOW_MS`, which nothing in the repo imports (the test does not reference it). Exporting a tuning constant for callers and tests is ordinary, and the export costs nothing; this is a preference, not a defect.\n- src/session.js:25 passes `user.id` where `claims.sub` is the same string. Equivalent and equally clear either way \u2014 preference only.\n\nOther problems I noticed sit squarely in other reviewers' lenses and I left them alone by design: `verify` in src/tokens.js:14-17 never checks the MAC that `sign` computes (security, and it falsifies plan claim C1); `describeSession` returning `token: rawToken` at src/session.js:36 (security vs AC5); `findUser` returning `undefined` for an unknown sub so `user.disabled` at src/session.js:16 throws a TypeError (correctness, plan claim C2); `REFRESH_WINDOW_MS = 5 * 60 * 1000` at src/session.js:6 against AC1's ten minutes (spec fidelity); and the two vacuous assertions in test/session.test.js:12 and :19 (test quality). Flagging them here would only duplicate work and cost the judge attention.",
+  "findings": [
+   {
+    "id": "SIMP-1",
+    "file": "src/users.js",
+    "line": 22,
+    "severity": "major",
+    "title": "`getUserById` in src/users.js is unreachable dead code that re-implements `findUser` with a slower linear scan, and it is attached via a second `module.exports` statement placed after the module's real export block.",
+    "summary": "`findUser(id)` (line 8) is `USERS.get(id)`. `getUserById(id)` (lines 22-29) iterates the same `USERS` Map comparing `key === id` and returns the same entry. I ran both against every id: `findUser('u1') === getUserById('u1')` is true (same object reference), likewise for `'u2'` and for a missing id (`undefined` from both). No input distinguishes them. A grep of the whole repo for `getUserById` finds only its own definition on line 22 and its export on line 31 \u2014 nothing imports or calls it, which the comment on lines 20-21 concedes (\"nothing calls this today\"), and the stated justification (\"an older caller used a different name\") has no referent anywhere in this tree. The export is also bolted on by a stray `module.exports.getUserById = ...` on line 31, after `module.exports = { findUser, recordLogin, USERS }` on line 18 already closed the module's public surface, so a reader scanning line 18 for the module's API gets an incomplete answer.",
+    "failure_scenario": "Concretely: today `getUserById('u1')` and `findUser('u1')` return the identical object, so the function buys nothing. The cost lands on the next change to user lookup. Say a maintainer implements the obvious follow-up of not handing out disabled accounts, and edits `findUser` to `const u = USERS.get(id); return u && !u.disabled ? u : undefined`. `getUserById('u2')` still returns the disabled grace@example.com record, unchanged, and no test catches it because the function has no caller and no test. Any code that later picks the older-sounding name \u2014 it is exported, so it is reachable \u2014 silently gets the pre-change semantics. The same trap applies to swapping `USERS` for a real store: `findUser` gets updated, while `for (const [key, user] of USERS)` on line 23 throws `TypeError: USERS is not iterable` at the first call from a non-Map backing store."
+   }
+  ]
+ },
+ {
+  "case": "token-refresh",
+  "lens": "test-quality",
+  "verdict": "findings",
+  "notes": "Suite is 2 tests, both green (`node --test test/`, node v20.16.0). I mutation-tested it against copies in a scratchpad (the reviewed tree was untouched): setting REFRESH_WINDOW_MS to 0 (refresh never happens), deleting the `user.disabled` guard, and replacing describeSession's return with `{everything: user, secret: SESSION_SECRET, raw: rawToken}` all leave the suite at \"pass 2, fail 0\". Direct probing of the shipped code confirms the suite is green while AC1, AC4 and AC5 are actually violated in production behavior: a token 7 minutes from expiry comes back `refreshed: false` (code window is 5 min, AC1 says 10); a token whose MAC is replaced with \"deadbeef\" is accepted and refreshed; describeSession returns the usable raw token. Two of five ACs (AC2, AC3) and both plan claims (C1, C2) have no test of any kind. Fixture `u2` (the disabled account) is never referenced by a test.",
+  "findings": [
+   {
+    "id": "TQ1",
+    "file": "test/session.test.js",
+    "line": 12,
+    "severity": "blocker",
+    "title": "The only refreshSession test asserts `result.token` is truthy, which is satisfied by both branches of the function \u2014 the non-refresh path returns `rawToken`, which is also truthy. The test therefore cannot detect whether a refresh happened at all, and does not touch the ten-minute window AC1 specifies.",
+    "summary": "Assertion is insensitive to the behavior it is supposed to guard (AC1). It never inspects `result.refreshed`, never compares the returned token against the input token, and uses `exp = now + 1000`, which is inside every plausible window.",
+    "failure_scenario": "src/session.js:6 sets REFRESH_WINDOW_MS to 5 minutes, but AC1 requires ten. A request carrying a token expiring in 7 minutes returns `{refreshed: false}` and the user is logged out mid-task \u2014 exactly the intent the plan states must not happen \u2014 while this test stays green. I confirmed this by probing the shipped code (7-minute token -> refreshed false) and by mutating REFRESH_WINDOW_MS to 0, which disables refreshing entirely and still yields 'pass 2, fail 0'."
+   },
+   {
+    "id": "TQ2",
+    "file": "test/session.test.js",
+    "line": 20,
+    "severity": "major",
+    "title": "AC2 ('when the token expires further out than that, the same token comes back with refreshed: false') has no test. No test in the file constructs a token expiring beyond the refresh window, and the string 'refreshed' does not appear anywhere in test/session.test.js.",
+    "summary": "Missing test for the entire non-refresh path of refreshSession (src/session.js:20-22).",
+    "failure_scenario": "If the early-return at src/session.js:20-22 were inverted or deleted so that every request minted a new token, both existing tests would still pass: test 1 only checks `result.token` is truthy, and describeSession does not exercise that branch. Every request would silently rotate the session token and write a `recordLogin` entry, and CI would report success."
+   },
+   {
+    "id": "TQ3",
+    "file": "test/session.test.js",
+    "line": 20,
+    "severity": "major",
+    "title": "AC3 ('when the account is disabled, refreshing fails and no new token is minted') has no test. The disabled fixture `u2` in src/users.js:5 is never referenced by any test.",
+    "summary": "Missing test for the disabled-account guard at src/session.js:16-18.",
+    "failure_scenario": "I deleted the `if (user.disabled) throw new Error('account disabled')` block in a scratchpad copy and the suite still reported 'pass 2, fail 0'. With that guard gone, a token for `u2` (grace@example.com, disabled) is refreshed into a fresh one-hour token and `recordLogin` writes to the disabled user's record \u2014 a disabled account extends its session indefinitely \u2014 with no test failing."
+   },
+   {
+    "id": "TQ4",
+    "file": "test/session.test.js",
+    "line": 20,
+    "severity": "blocker",
+    "title": "AC4 ('when a token's signature does not match its body, refreshing fails and nothing is looked up') and plan claim C1 ('verify rejects a token whose MAC does not match its body') have no test. No test constructs a token with a mismatched MAC.",
+    "summary": "Missing test for signature verification. src/tokens.js:14-17 destructures only `[body]` from the split and never recomputes or compares the HMAC, so `verify` is a decoder, not a verifier \u2014 and no test exists that would have caught that.",
+    "failure_scenario": "Verified against the shipped code: taking a valid token and replacing its MAC segment with 'deadbeef', or hand-building `base64url(JSON.stringify({sub:'u1', exp: Date.now()+1000})) + '.x'`, makes refreshSession return `{refreshed: true}` with a freshly signed, fully valid token. An unauthenticated attacker mints a session for any user id by forging the body. The suite is green."
+   },
+   {
+    "id": "TQ5",
+    "file": "test/session.test.js",
+    "line": 19,
+    "severity": "blocker",
+    "title": "The describeSession test's only assertion is `assert.ok(result)`, which is true for any non-null return value. It cannot fail unless the function returns null/undefined or throws, so nothing in it guards AC5's requirement that the description expose nothing usable.",
+    "summary": "Vacuous assertion. It checks neither the fields AC5 requires (whose session, when it expires) nor the exclusion AC5 requires.",
+    "failure_scenario": "src/session.js:36 puts `token: rawToken` \u2014 the live, usable bearer token \u2014 into the admin console payload, which is precisely what AC5 forbids ('without exposing anything that would let the reader use it'). I confirmed the shipped response is `{user, expires, token: <full valid token>}`. I also replaced the return with `{everything: user, secret: process.env.SESSION_SECRET || 'dev-secret', raw: rawToken}` and the suite still reported 'pass 2, fail 0' \u2014 any admin-console leak, up to the signing secret, passes this test."
+   },
+   {
+    "id": "TQ6",
+    "file": "test/session.test.js",
+    "line": 20,
+    "severity": "minor",
+    "title": "Plan claim C2 ('findUser returns a user for every id that reaches it') is untested and false. No test passes a `sub` that is absent from the USERS map in src/users.js:3-6.",
+    "summary": "Missing test for the unknown/deleted-subject path through refreshSession and describeSession.",
+    "failure_scenario": "Verified against shipped code: `refreshSession(sign({sub:'nope', exp: now+1000}), now)` throws `TypeError: Cannot read properties of undefined (reading 'disabled')` at src/session.js:16 instead of a clean auth failure. A user deleted between login and refresh produces a 500-class crash rather than a rejected session, and no test notices. describeSession has the same hole at src/session.js:32 (`user.email` on undefined)."
+   },
+   {
+    "id": "TQ7",
+    "file": "test/session.test.js",
+    "line": 11,
+    "severity": "minor",
+    "title": "USERS in src/users.js:3 is a module-level Map shared by every test in the process, and refreshSession mutates it via recordLogin (src/users.js:12-15 sets `user.lastLogin`). The test file has no beforeEach/afterEach or any other reset.",
+    "summary": "Shared mutable fixture with no isolation between tests. The first test permanently writes `lastLogin` onto the `u1` record for the remainder of the process.",
+    "failure_scenario": "The natural assertions for AC2 and AC3 ('no new token is minted') are that `USERS.get(id).lastLogin` is still undefined. Once such a test is added for `u1`, it passes when run alone or via `--test-only` filtering, and fails when the whole file runs in declaration order, because the test at line 8 already refreshed `u1` and recorded a login. The failure is order-dependent, not deterministic."
+   }
+  ]
+ }
+]

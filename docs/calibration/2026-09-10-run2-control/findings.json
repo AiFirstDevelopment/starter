@@ -1,0 +1,72 @@
+[
+ {
+  "case": "clean-control",
+  "lens": "behavior",
+  "status": "unrun",
+  "reason": "the fixture is a library with no runnable surface; the behavior lens has nothing to launch"
+ },
+ {
+  "case": "clean-control",
+  "lens": "correctness",
+  "verdict": "clean",
+  "notes": "Snapshot is two files: src/slug.js (33 lines) and test/slug.test.js (54 lines). No package.json; tests run with `node --test test/` and all 8 pass.\n\nVerification performed:\n- Traced all five ACs against src/slug.js. AC1 (regex collapse of non-alnum runs), AC2 (empty-words guard, line 19), AC3 (greedy fit guard `slug.length + 1 + word.length > MAX_LENGTH`, line 25 \u2014 `>` is the correct operator for a <=60 bound, and a trailing hyphen is impossible because filter(Boolean) on line 17 guarantees non-empty words), AC4 (`words[0].slice(0, MAX_LENGTH)`, line 23), AC5 (typeof guard, line 8).\n- Ran a 300,000-case property fuzz over strings mixing ASCII letters/digits, punctuation, apostrophes, accented Latin, CJK, emoji, tab and newline. Checked invariants: length <= 60, no leading/trailing hyphen, no doubled hyphen, charset subset of [a-z0-9-], empty output when the title has no ASCII alphanumerics, and exact equality with an independently written greedy-packing reference. Zero violations.\n- Confirmed the typeof guard rejects null, undefined, number, array, plain object, Symbol, and boxed `new String('hi')`.\n- Confirmed slice() can never split a surrogate pair, since only [a-z0-9] survive the replace on line 14.\n- Confirmed the two boundary tests are load-bearing: line 46 (50+1+9===60) is the only shape distinguishing `>` from `>=` at line 25, and line 36 asserts the guard's message rather than only the TypeError class, so deleting line 8-10 would fail rather than pass on the native null.toLowerCase() TypeError.\n- Claim C1 holds: no other file in the snapshot does slugification.\n\nConsidered and deliberately not reported: a mid-word non-ASCII character acts as a separator rather than being elided, so slugify('Cafe Munster') with accented characters yields 'caf-m-nster'. This follows directly from semantics the plan accepts \u2014 the test at line 12 pins \"Ada's Notes: Vol. 2\" -> 'ada-s-notes-vol-2', i.e. any non-alphanumeric run becomes a separator \u2014 and transliteration of non-ASCII is an explicit non-goal. This is convention, not a defect, so it is not a finding.",
+  "findings": []
+ },
+ {
+  "case": "clean-control",
+  "lens": "spec-fidelity",
+  "verdict": "clean",
+  "notes": "Scope: /Users/joelstevick/starter/plugins/quorum/calibration/cases/clean-control/repo (two files: src/slug.js, test/slug.test.js) against plan.md.\n\nAll five acceptance criteria verified by direct execution, not by trusting the shipped tests:\n- AC1: greedy [^a-z0-9]+ collapses runs of spaces/punctuation to a single hyphen; 'Hello -- World' -> 'hello-world'.\n- AC2: '', '!!! ???', and '   ' all return ''.\n- AC3: the loop only appends '-' + word for non-empty words, so the slug can never end in a hyphen; it breaks at the first overflowing word. Boundary confirmed: 58+1+1=60 kept, 59+1+1=61 stops at 59.\n- AC4: 'z'.repeat(70) -> exactly 60 chars, also when followed by another word.\n- AC5: null, undefined, 42, {}, [], Symbol, and a boxed String all throw TypeError with the guard's own message. The test asserts the message, so deleting the guard would not pass (native null.toLowerCase() TypeError would not match).\n\nNon-goals: neither built. Non-ASCII is dropped, not transliterated ('Caf\u00e9 \u00dcber' -> 'caf-ber'), which is the correct consequence of declining transliteration. No uniqueness/registry logic exists.\n\nApproach claim C1 (\"Nothing else in the repository already does this\") holds: the repo contains only the two files above, with no other slug/URL/string-normalization code.\n\nSteps S1 (slugify + MAX_LENGTH, both exported) and S2 (every AC has a test) are met. Test strategy holds: all criteria exercised through require('../src/slug'). Two extra boundary tests (exact-fit, one-over) are additive coverage, not scope creep.\n\nBuild notes say \"Built as planned\" and record no deviations; I found none. No PLAN DEFECT note is present and none is warranted. The AC3/AC4 overlap for an over-length single word is resolved consistently in favor of the more specific AC4.\n\nnode --test: 8 tests, 8 pass, 0 fail.",
+  "findings": []
+ },
+ {
+  "case": "clean-control",
+  "lens": "security",
+  "verdict": "clean",
+  "notes": "Scope: only two files exist under the snapshot root \u2014 src/slug.js (one pure function, 33 lines) and test/slug.test.js. No package.json, lockfile, or config, so the dependency-risk surface is empty.\n\nChecks performed against the security remit:\n\n1. Injection / output safety \u2014 src/slug.js:14 replaces every character outside [a-z0-9] with a separator, so the output alphabet is provably [a-z0-9-]. Fuzzed 20,000 random strings over U+0001-U+2FFF: zero characters outside that set, no '/', '%', or '..' sequences, no leading/trailing hyphen, no result exceeding 60 chars. slugify('..%2f..%2fetc/passwd') === '2f-2fetc-passwd'. Path traversal and encoding smuggling are structurally impossible through this function.\n\n2. ReDoS \u2014 the sole regex /[^a-z0-9]+/g (src/slug.js:14) is a single character class with one quantifier; no nesting or alternation, so no catastrophic backtracking. Measured 200 KB inputs of '!', alternating 'a!', and leading whitespace: all complete in <= 10.5 ms (linear).\n\n3. Unbounded work \u2014 the accumulation loop at src/slug.js:24-29 breaks on the first overflowing word rather than continuing, so a 100,000-word title does bounded work.\n\n4. Sensitive data in errors/logs \u2014 the TypeError at src/slug.js:9 uses a fixed message and does not interpolate the caller's argument, so a non-string carrying sensitive content cannot leak into the error or stack. There is no logging anywhere in the module.\n\n5. Authn/authz, secrets, unsafe deserialization \u2014 no I/O, network, filesystem, eval/Function, JSON.parse, or credential-shaped literals. Nothing in these categories has a surface here.\n\nConsidered and deliberately not reported: AC2 mandates an empty-string output for punctuation-only titles, which a caller composing `/articles/${slug}` could turn into an ambiguous route. That is a property of a hypothetical caller rather than a defect in this code, and uniqueness is an explicit non-goal in the plan.",
+  "findings": []
+ },
+ {
+  "case": "clean-control",
+  "lens": "simplicity",
+  "verdict": "findings",
+  "notes": "Scope is two files totalling 87 lines: src/slug.js and test/slug.test.js. Nothing else exists in the tree (no package.json, no config, no other modules), so plan claim C1 holds trivially and there is no reuse opportunity to miss. No duplication, no unused exports (MAX_LENGTH is consumed by the tests), no premature abstraction, no options/config surface. The eight tests are not redundant with one another: the three length tests at lines 20-25, 43-49 and 51-54 pin distinct boundaries (over-length, exact fit, one-over), and the comments state which mutant each kills. Tests pass (8/8) via `node --test`. The single nit above is the only thing I could substantiate; a reviewer who accepted less evidence would have reported nothing here.",
+  "findings": [
+   {
+    "id": "simplicity-1",
+    "file": "src/slug.js",
+    "line": 17,
+    "severity": "nit",
+    "title": "`.filter(Boolean)` on the word list is unreachable-effect code: the preceding regex collapse plus trim guarantees `split(' ')` never yields a falsy element that changes the result.",
+    "summary": "In `slugify`, the pipeline is `.replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean)`. Because the character class is quantified with `+`, every run of non-alphanumeric characters collapses to exactly one space, and `.trim()` removes the leading/trailing ones, so `split(' ')` can only produce non-empty words. The single exception is an input that reduces to `''`, where `split(' ')` returns `['']` \u2014 and that produces `''` either way, since `''.slice(0, MAX_LENGTH)` is `''` and the `for` loop over `words.slice(1)` has nothing to iterate.",
+    "failure_scenario": "No behavioral failure \u2014 that is the point. For `slugify('!!! ???')` the filter turns `['']` into `[]` and the `words.length === 0` guard returns `''`; with the filter deleted, `words` is `['']`, the guard is skipped, and line 23 returns `''` anyway. I verified equivalence exhaustively by running both variants over every string of length 0-5 built from `a`, `1`, `' '`, `'  '`, `-`, `!`, tab, and `\u00e9` (37,449 inputs): zero divergences. So the filter is dead, and with it gone the `words.length === 0` early return on lines 19-21 is also redundant, making the function three lines shorter with identical output for every input."
+   }
+  ]
+ },
+ {
+  "case": "clean-control",
+  "lens": "test-quality",
+  "verdict": "findings",
+  "notes": "All five acceptance criteria have at least one test and all 8 tests pass under `node --test`. No flakiness surface: slugify is pure with no clock, network, randomness, filesystem, or shared mutable state, and the tests are order-independent. The boundary tests at slug.test.js:43 and :51 are strong - they pin the `>` vs `>=` comparison from both sides. The AC5 test at :32 correctly asserts the guard's own message rather than just the TypeError class, which is the distinction that would otherwise let guard deletion pass. Reviewed only src/slug.js and test/slug.test.js (the only two files in the snapshot); no git commands were run and the reviewed tree was left byte-identical - mutation testing was performed on copies under the session scratchpad. Both findings are minor: the shipped implementation is correct, and each gap closes with one added assertion or case.",
+  "findings": [
+   {
+    "id": "TQ1",
+    "file": "test/slug.test.js",
+    "line": 29,
+    "severity": "minor",
+    "title": "The only test for AC4 asserts the slug's length but not its content, using an input where every possible 60-character result is identical, so it cannot detect truncation from the wrong end of the word.",
+    "summary": "Test 'a single word longer than MAX_LENGTH is cut to it' calls slugify('z'.repeat(100)) and asserts only assert.strictEqual(slug.length, MAX_LENGTH). Because every character of the input is 'z', any 60-character output passes regardless of which 60 characters the implementation kept. AC4 requires the word 'cut to exactly 60', i.e. the leading 60 characters.",
+    "failure_scenario": "Verified by mutation on a scratch copy: changing src/slug.js:23 from `words[0].slice(0, MAX_LENGTH)` to `words[0].slice(-MAX_LENGTH)` leaves all 8 tests passing (# pass 8 # fail 0). With that regression in place, slugify('Supercalifragilisticexpialidocious'.repeat(3)) returns 'ifragilisticexpialidocioussupercalifragilisticexpialidocious' (the trailing 60 chars) instead of the correct 'supercalifragilisticexpialidocioussupercalifragilisticexpial'. Article URLs would be built from the tail of the title with the beginning silently discarded, and the suite would stay green."
+   },
+   {
+    "id": "TQ2",
+    "file": "test/slug.test.js",
+    "line": 52,
+    "severity": "minor",
+    "title": "No test exercises a too-long word followed by a shorter word that would still fit, so the `break` that implements AC3's 'stops at the last whole word that fits' is unguarded; replacing it with `continue` passes the entire suite.",
+    "summary": "The over-length cases are slug.test.js:21 (all trailing words the same length, so skip-vs-stop is indistinguishable) and slug.test.js:52 ('a'x50 + ' ' + 'b'x10, where the rejected word is the last one). Neither has a word after the first rejected one, so the loop-termination semantics at src/slug.js:26 are never observed.",
+    "failure_scenario": "Verified by mutation on a scratch copy: changing `break` to `continue` at src/slug.js:26 leaves all 8 tests passing (# pass 8 # fail 0). With that regression, slugify('a'.repeat(50) + ' ' + 'b'.repeat(10) + ' c') returns 'aaaa...a-c' (52 chars) instead of the AC3-correct 'aaaa...a' (50 chars) - a slug that drops a word out of the middle of the title while still satisfying the length bound and the no-trailing-hyphen rule that the current assertions check."
+   }
+  ]
+ }
+]

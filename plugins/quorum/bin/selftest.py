@@ -1635,6 +1635,52 @@ def test_calibrate():
         finally:
             shutil.rmtree(root, ignore_errors=True)
 
+    # A lens can be exempted from the false-positive count on a control, but
+    # only out loud. test-quality needs it: its remit is whether a test would
+    # fail if the behaviour broke, mutation space is unbounded, and a finding
+    # there measures the fixture's exhaustiveness rather than the lens. That
+    # is also exactly the knob that would let a harness flatter its subject,
+    # so a reason is mandatory and the report prints it above the table.
+    root = tempfile.mkdtemp(prefix='quorum-cases-')
+    try:
+        os.makedirs(os.path.join(root, 'control'))
+        path = os.path.join(root, 'control', 'manifest.json')
+
+        def control(**extra):
+            body = {'case': 'control', 'control': True, 'planted': []}
+            body.update(extra)
+            with open(path, 'w') as handle:
+                json.dump(body, handle)
+
+        fp = {'file': 'a.js', 'line': 1, 'severity': 'major',
+              'title': 'x', 'summary': 'y'}
+        findings = [{'case': 'control', 'lens': 'test-quality', 'findings': [fp]}]
+
+        control()
+        row = (calibrate_score(root, findings).get('lenses') or {}).get('test-quality') or {}
+        check('without an exemption a control finding is a false positive',
+              len(row.get('false_positives') or []) == 1,
+              'fp=%r' % row.get('false_positives'))
+
+        control(notControlFor=['test-quality'], notControlForReason='unbounded mutation space')
+        row = (calibrate_score(root, findings).get('lenses') or {}).get('test-quality') or {}
+        check('an exempt lens reports unmatched instead of a false positive',
+              not row.get('false_positives') and len(row.get('unmatched') or []) == 1,
+              'fp=%r unmatched=%r' % (row.get('false_positives'), row.get('unmatched')))
+
+        control(notControlFor=['test-quality'])
+        code, out, err = run(['python3', CALIBRATE, '--cases', root, '--validate'])
+        check('an exemption without a stated reason is refused', code == 1,
+              'exit %d: %s' % (code, (out + err).strip()[:160]))
+
+        control(notControlFor=['correctness'], notControlForReason='r')
+        row = (calibrate_score(root, findings).get('lenses') or {}).get('test-quality') or {}
+        check('an exemption covers only the lens it names',
+              len(row.get('false_positives') or []) == 1,
+              'exempting correctness must not shield test-quality')
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
     # A control that plants something is a contradiction, not a case.
     root = tempfile.mkdtemp(prefix='quorum-cases-')
     try:

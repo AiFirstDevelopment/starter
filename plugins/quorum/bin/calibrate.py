@@ -107,6 +107,20 @@ def validate(name, manifest):
     if manifest.get('control') and planted:
         problems.append('control cases must plant nothing')
 
+    exempt = manifest.get('notControlFor') or []
+    if not isinstance(exempt, list):
+        problems.append('"notControlFor" must be a list of lens names')
+    elif exempt:
+        if not manifest.get('control'):
+            problems.append('"notControlFor" only means anything on a control')
+        if not manifest.get('notControlForReason'):
+            problems.append(
+                '"notControlFor" needs "notControlForReason" — exempting a lens '
+                'from the only measurement that can go against it is exactly the '
+                'move that makes a harness flatter its subject, so it is written '
+                'down and read'
+            )
+
     seen = set()
     for i, defect in enumerate(planted):
         where = 'planted[%d]' % i
@@ -285,7 +299,12 @@ def score(cases, results):
                     'severity': finding.get('severity'),
                     'title': finding.get('title') or finding.get('summary') or '',
                 }
-                if control and severity_at_or_above(finding, FALSE_POSITIVE_FLOOR):
+                scores_fp = (
+                    control
+                    and lens not in (case.get('notControlFor') or [])
+                    and severity_at_or_above(finding, FALSE_POSITIVE_FLOOR)
+                )
+                if scores_fp:
                     tally[lens]['false_positives'].append(record)
                 else:
                     tally[lens]['unmatched'].append(record)
@@ -318,6 +337,18 @@ def report(scored, cases):
     add('is nothing a finding could have legitimately found. Everything else is')
     add('listed below unscored, because the fixtures cannot settle it.')
     add('')
+
+    exempt = [(c['case'], c.get('notControlFor') or [], c.get('notControlForReason', ''))
+              for c in cases if c.get('notControlFor')]
+    if exempt:
+        add('**Lenses exempt from the false-positive count**, and why. Read these')
+        add('before the table: an exemption is the harness declining to measure the')
+        add('one thing that can count against a lens.')
+        add('')
+        for name, lenses, why in exempt:
+            add('- `%s` on control `%s` — %s'
+                % ('`, `'.join(lenses), name, why))
+        add('')
     add('| Lens | Planted | Caught | Catch rate | False pos. (controls) | Cross-catches | Unmatched | Findings |')
     add('|---|---|---|---|---|---|---|---|')
     for lens in sorted(scored['lenses']):
