@@ -945,6 +945,12 @@ quorum — a delivery pipeline:
                    stops until I confirm them. Runs on the default branch, writes
                    no code, never runs the code it audits, and works on a repo
                    that never used the pipeline.
+  /quorum:calibrate
+                   Measure the review panel itself: run the six lenses over
+                   fixtures whose defects are planted in advance and report a
+                   catch rate and false-positive rate for each. A deliberate
+                   evaluation I invoke by hand — never part of a suite that has
+                   to be green.
 
 tests — testing discipline:
   /tests:add       Behavioral tests against the fully assembled app through its
@@ -1035,6 +1041,7 @@ starter/
 │   │   ├── bin/                  # the enforcement layer — no model involved
 │   │   │   ├── guard.py          # the mechanical rules; vendored into CI
 │   │   │   ├── audit.py          # hashes an audit's criteria list, and verifies it
+│   │   │   ├── calibrate.py      # scores the panel against fixtures with known defects
 │   │   │   ├── history.py        # every work item ever planned, from git
 │   │   │   ├── watch.py          # emits a line when a running item moves
 │   │   │   ├── plan-lock-hook.py # PreToolUse refusal of requirement edits
@@ -1043,7 +1050,9 @@ starter/
 │   │   ├── hooks/hooks.json      # wires the plan-lock hook in
 │   │   ├── workflow/             # deterministic orchestration
 │   │   │   ├── pipeline.js       # build, review, adjudicate, publish
-│   │   │   └── audit.js          # cluster, audit, refute, report — read-only
+│   │   │   ├── audit.js          # cluster, audit, refute, report — read-only
+│   │   │   └── calibrate.js      # every lens over every fixture, read-only
+│   │   ├── calibration/cases/    # fixtures with planted defects + clean controls
 │   │   ├── reference/
 │   │   │   ├── contract.md       # the pipeline's artifact contract
 │   │   │   └── audit.md          # the audit's, kept separate on purpose
@@ -1054,6 +1063,7 @@ starter/
 │   │       ├── 3-review/SKILL.md
 │   │       ├── 4-quorum/SKILL.md
 │   │       ├── audit/SKILL.md
+│   │       ├── calibrate/SKILL.md
 │   │       ├── guard/SKILL.md
 │   │       ├── history/SKILL.md
 │   │       └── status/SKILL.md

@@ -1,0 +1,57 @@
+{
+  "case": "token-refresh",
+  "summary": "A session-refresh module with one planted defect per diff-reading lens.",
+  "control": false,
+  "unrunnable": ["behavior"],
+  "unrunnableReason": "the fixture is a library with no runnable surface; the behavior lens has nothing to launch",
+  "planted": [
+    {
+      "id": "SEC1",
+      "lens": "security",
+      "file": "src/tokens.js",
+      "lines": [13, 17],
+      "match": ["verify"],
+      "note": "verify() decodes the body and never checks the MAC that sign() computed, so any attacker can mint a token for any sub. Contradicts AC4 and claim C1."
+    },
+    {
+      "id": "SEC2",
+      "lens": "security",
+      "file": "src/session.js",
+      "lines": [33, 37],
+      "match": ["token"],
+      "note": "describeSession returns the raw session token to the admin console, which is exactly what AC5 says it must not do."
+    },
+    {
+      "id": "COR1",
+      "lens": "correctness",
+      "file": "src/session.js",
+      "lines": [15, 18],
+      "match": ["user"],
+      "note": "findUser returns undefined for an unknown sub; user.disabled then throws a TypeError rather than failing the refresh. Claim C2 is false."
+    },
+    {
+      "id": "TST1",
+      "lens": "test-quality",
+      "file": "test/session.test.js",
+      "lines": [8, 20],
+      "match": ["assert"],
+      "note": "Both assertions are vacuous: assert.ok(result.token) passes when nothing refreshed, and assert.ok(result) passes for any object. Neither fails if the behaviour breaks. AC1, AC2 and AC3 have no test at all."
+    },
+    {
+      "id": "SPC1",
+      "lens": "spec-fidelity",
+      "file": "src/session.js",
+      "lines": [6, 6],
+      "match": ["REFRESH_WINDOW_MS"],
+      "note": "AC1 says ten minutes; REFRESH_WINDOW_MS is five. The window is half what the plan agreed."
+    },
+    {
+      "id": "SIM1",
+      "lens": "simplicity",
+      "file": "src/users.js",
+      "lines": [20, 31],
+      "match": ["getUserById"],
+      "note": "getUserById re-implements findUser with a linear scan over the same Map, is exported separately, and has no callers."
+    }
+  ]
+}

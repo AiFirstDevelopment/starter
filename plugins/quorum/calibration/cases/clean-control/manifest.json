@@ -1,0 +1,8 @@
+{
+  "case": "clean-control",
+  "summary": "A small pure function that meets its plan. Nothing is planted; anything a lens reports at minor or above is a false positive.",
+  "control": true,
+  "unrunnable": ["behavior"],
+  "unrunnableReason": "the fixture is a library with no runnable surface; the behavior lens has nothing to launch",
+  "planted": []
+}

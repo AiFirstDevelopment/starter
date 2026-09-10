@@ -42,11 +42,13 @@ STATE = os.path.join(HERE, 'state.py')
 HISTORY = os.path.join(HERE, 'history.py')
 WATCH = os.path.join(HERE, 'watch.py')
 AUDIT = os.path.join(HERE, 'audit.py')
+CALIBRATE = os.path.join(HERE, 'calibrate.py')
 
 PLUGIN = os.path.dirname(HERE)
 MANIFEST = os.path.join(PLUGIN, '.claude-plugin', 'plugin.json')
 AGENTS_DIR = os.path.join(PLUGIN, 'agents')
 WORKFLOW_DIR = os.path.join(PLUGIN, 'workflow')
+CASES_DIR = os.path.join(PLUGIN, 'calibration', 'cases')
 
 # Scripts whose agents must not be granted a way to touch the repository they run
 # against — neither to edit it nor to execute it. /quorum:audit runs on the default
@@ -1472,6 +1474,247 @@ def frontmatter_tools(path):
     return names or None
 
 
+# ------------------------------------------------------------- calibration
+
+def calibrate_score(cases_dir, results):
+    """Run the scorer over synthetic findings and return its JSON."""
+    handle = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
+    try:
+        json.dump(results, handle)
+        handle.close()
+        code, out, err = run(['python3', CALIBRATE, '--cases', cases_dir,
+                              '--findings', handle.name, '--json'])
+        if code != 0:
+            return {'<calibrate failed: %s>' % (err.strip() or out.strip()): True}
+        try:
+            return json.loads(out)
+        except ValueError:
+            return {'<calibrate returned non-JSON: %s>' % out[:200]: True}
+    finally:
+        os.unlink(handle.name)
+
+
+def make_cases(planted, control_findings_note=None):
+    """A throwaway case directory: one planted case and one clean control."""
+    root = tempfile.mkdtemp(prefix='quorum-cases-')
+    for name, manifest in (
+        ('planted', {'case': 'planted', 'control': False, 'planted': planted}),
+        ('control', {'case': 'control', 'control': True, 'planted': []}),
+    ):
+        os.makedirs(os.path.join(root, name))
+        with open(os.path.join(root, name, 'manifest.json'), 'w') as handle:
+            json.dump(manifest, handle)
+    return root
+
+
+DEFECT = {
+    'id': 'D1', 'lens': 'security', 'file': 'src/tokens.js',
+    'lines': [10, 20], 'match': ['verify', 'mac'],
+}
+
+
+def test_calibrate():
+    """The scorer's arithmetic, which is the only deterministic half.
+
+    Running the lenses is a human step (`/quorum:calibrate`) and deliberately
+    outside every suite that has to be green: its output varies between runs,
+    and a varying number inside a required check gets the check loosened until
+    it passes. So what is asserted here is the scoring, on findings written by
+    hand — no agent is launched.
+    """
+    print('calibration scorer')
+
+    root = make_cases([DEFECT])
+    try:
+        hit = {'file': 'src/tokens.js', 'line': 15, 'severity': 'blocker',
+               'title': 'verify never checks the MAC',
+               'summary': 'the mac is computed and never compared'}
+
+        scored = calibrate_score(root, [{'case': 'planted', 'lens': 'security',
+                                         'findings': [hit]}])
+        sec = (scored.get('lenses') or {}).get('security') or {}
+        check('a matching finding scores a catch',
+              sec.get('caught') == 1 and sec.get('catch_rate') == 1.0,
+              'caught=%r rate=%r' % (sec.get('caught'), sec.get('catch_rate')))
+        check('a matched finding is not also unmatched',
+              not sec.get('unmatched'), 'unmatched: %r' % sec.get('unmatched'))
+
+        # Right defect, wrong place. A lens pointing somewhere else has not
+        # found it, and crediting that would make the rate meaningless.
+        away = dict(hit, line=400)
+        scored = calibrate_score(root, [{'case': 'planted', 'lens': 'security',
+                                         'findings': [away]}])
+        sec = (scored.get('lenses') or {}).get('security') or {}
+        check('a finding outside the declared lines is not a catch',
+              sec.get('caught') == 0 and len(sec.get('missed') or []) == 1,
+              'caught=%r missed=%r' % (sec.get('caught'), sec.get('missed')))
+
+        # A finding with no line at all still matches: some lenses name a
+        # symbol instead. A *wrong* line never does.
+        vague = {'file': 'src/tokens.js', 'severity': 'major',
+                 'title': 'verify skips the mac', 'summary': ''}
+        scored = calibrate_score(root, [{'case': 'planted', 'lens': 'security',
+                                         'findings': [vague]}])
+        sec = (scored.get('lenses') or {}).get('security') or {}
+        check('a finding with no line number can still match',
+              sec.get('caught') == 1, 'caught=%r' % sec.get('caught'))
+
+        # Missing one of the match strings means it is talking about something
+        # else in the same file.
+        other = dict(hit, title='verify is slow', summary='no mention of the other word')
+        scored = calibrate_score(root, [{'case': 'planted', 'lens': 'security',
+                                         'findings': [other]}])
+        sec = (scored.get('lenses') or {}).get('security') or {}
+        check('a finding missing a match string is not a catch',
+              sec.get('caught') == 0, 'caught=%r' % sec.get('caught'))
+        check('it is reported unmatched, not as a false positive',
+              len(sec.get('unmatched') or []) == 1 and not sec.get('false_positives'),
+              'unmatched=%r fp=%r' % (sec.get('unmatched'), sec.get('false_positives')))
+
+        # Another lens finding it is recorded and scored against nobody.
+        scored = calibrate_score(root, [{'case': 'planted', 'lens': 'correctness',
+                                         'findings': [hit]}])
+        lenses = scored.get('lenses') or {}
+        check('a cross-lens catch is recorded against the finder',
+              len((lenses.get('correctness') or {}).get('cross') or []) == 1,
+              'cross=%r' % (lenses.get('correctness') or {}).get('cross'))
+        check('a cross-lens catch does not credit the owning lens',
+              (lenses.get('security') or {}).get('caught') == 0,
+              'security caught=%r' % (lenses.get('security') or {}).get('caught'))
+        check('a cross-lens catch is not a false positive',
+              not (lenses.get('correctness') or {}).get('false_positives'),
+              'fp=%r' % (lenses.get('correctness') or {}).get('false_positives'))
+
+        # Controls are the only place a false positive can be known.
+        fp = {'file': 'src/slug.js', 'line': 3, 'severity': 'major',
+              'title': 'off by one', 'summary': 'it is not'}
+        scored = calibrate_score(root, [{'case': 'control', 'lens': 'correctness',
+                                         'findings': [fp]}])
+        cor = (scored.get('lenses') or {}).get('correctness') or {}
+        check('a finding on a clean control is a false positive',
+              len(cor.get('false_positives') or []) == 1,
+              'fp=%r' % cor.get('false_positives'))
+
+        # The reviewer prompt invites nits; scoring them would punish obedience.
+        nit = dict(fp, severity='nit')
+        scored = calibrate_score(root, [{'case': 'control', 'lens': 'correctness',
+                                         'findings': [nit]}])
+        cor = (scored.get('lenses') or {}).get('correctness') or {}
+        check('a nit on a control is not a false positive',
+              not cor.get('false_positives') and len(cor.get('unmatched') or []) == 1,
+              'fp=%r unmatched=%r' % (cor.get('false_positives'), cor.get('unmatched')))
+
+        # A lens that never looked has not missed anything.
+        scored = calibrate_score(root, [{'case': 'planted', 'lens': 'security',
+                                         'status': 'unrun', 'reason': 'no surface'}])
+        sec = (scored.get('lenses') or {}).get('security') or {}
+        check('an unrun lens leaves the denominator alone',
+              sec.get('planted') == 0 and sec.get('catch_rate') is None,
+              'planted=%r rate=%r' % (sec.get('planted'), sec.get('catch_rate')))
+        check('an unrun lens is not scored as having missed the defect',
+              not sec.get('missed'), 'missed=%r' % sec.get('missed'))
+        check('an unrun lens is named in the report',
+              len(sec.get('unrun') or []) == 1, 'unrun=%r' % sec.get('unrun'))
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+    # A manifest that cannot produce a meaningful score is refused rather than
+    # scored, because a confident number from a vague fixture is the worst
+    # output this tool could have.
+    for name, planted, why in (
+        ('no match strings', [dict(DEFECT, match=[])], 'empty match'),
+        ('no lines', [{'id': 'D1', 'lens': 'security', 'file': 'a.js',
+                       'match': ['x']}], 'missing lines'),
+        ('duplicate ids', [DEFECT, dict(DEFECT, file='b.js')], 'duplicate id'),
+    ):
+        root = make_cases(planted)
+        try:
+            code, out, err = run(['python3', CALIBRATE, '--cases', root, '--validate'])
+            check('a manifest with %s is refused' % name, code == 1,
+                  'exit %d: %s' % (code, (out + err).strip()[:160]))
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    # A control that plants something is a contradiction, not a case.
+    root = tempfile.mkdtemp(prefix='quorum-cases-')
+    try:
+        os.makedirs(os.path.join(root, 'bad'))
+        with open(os.path.join(root, 'bad', 'manifest.json'), 'w') as handle:
+            json.dump({'case': 'bad', 'control': True, 'planted': [DEFECT]}, handle)
+        code, out, err = run(['python3', CALIBRATE, '--cases', root, '--validate'])
+        check('a control that plants a defect is refused', code == 1,
+              'exit %d' % code)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+    # The shipped fixtures have to be usable, or the command fails on first run.
+    code, out, err = run(['python3', CALIBRATE, '--cases', CASES_DIR, '--validate'])
+    check('the shipped calibration cases validate', code == 0,
+          (out + err).strip()[:200])
+    check('at least one shipped case is a clean control', 'clean control' in out
+          and ' 0 clean control(s)' not in out, out.strip())
+
+    # ------------------------------------------------ the panel it measures
+
+    # A calibration of a differently-prompted panel measures a panel nobody
+    # runs. The remits are duplicated between the two scripts by necessity —
+    # neither can import the other — so the copies are held equal here.
+    def remits(path):
+        with open(path) as handle:
+            source = handle.read()
+        block = re.search(r'const LENSES = \[(.*?)\n\]', source, re.S)
+        if not block:
+            return None
+        return re.findall(r"key: '([^']+)'", block.group(1)), re.sub(
+            r'\s+', ' ', block.group(1))
+
+    pipeline = remits(os.path.join(WORKFLOW_DIR, 'pipeline.js'))
+    calibrate = remits(os.path.join(WORKFLOW_DIR, 'calibrate.js'))
+    check('both workflows declare a LENSES block',
+          pipeline is not None and calibrate is not None,
+          'pipeline=%r calibrate=%r' % (pipeline is None, calibrate is None))
+    if pipeline and calibrate:
+        check('calibrate.js measures the same lenses pipeline.js runs',
+              pipeline[0] == calibrate[0],
+              'pipeline=%s calibrate=%s' % (pipeline[0], calibrate[0]))
+        check('calibrate.js uses pipeline.js\'s remits verbatim',
+              pipeline[1] == calibrate[1],
+              'the remit text has drifted; a differently-prompted panel is a '
+              'different panel and its score does not describe production')
+
+    # ------------------------------------------- and stays out of the suite
+
+    # The whole point of it being an eval. If it ever lands in CI, its numbers
+    # get tuned until the build is green.
+    workflow = os.path.join(os.path.dirname(os.path.dirname(PLUGIN)),
+                            '.github', 'workflows', 'selftest.yml')
+    if os.path.exists(workflow):
+        with open(workflow) as handle:
+            ci = handle.read()
+        check('the selftest workflow does not run calibration',
+              'calibrate' not in ci.lower(),
+              'calibration in CI gets its thresholds lowered until it passes')
+
+    # Naming an agent is fine — test_agents has to, to check the names resolve.
+    # Launching one is not, and there are exactly two ways to: the Workflow tool
+    # (unreachable from here) and a nested `claude` session. This repo has been
+    # bitten by the second before, so it is the one spelled out.
+    with open(os.path.abspath(__file__)) as handle:
+        me = handle.read()
+    spawns = sorted(set(re.findall(r"run\(\[\s*'([^']+)'", me)))
+    check('selftest spawns only git and python3',
+          spawns == ['git', 'python3'],
+          'spawns %s — an agent is reachable through a nested `claude` session '
+          'or a `node` run of a workflow script, and neither belongs in a suite '
+          'that has to be green' % spawns)
+
+    # calibrate.js is *read* above, to compare its remits against pipeline.js.
+    # Reading it is the point; running it would launch six lenses per case.
+    check('selftest reads the calibration workflow without running it',
+          'calibrate.js' in me and 'node' not in spawns,
+          'the drift check needs the file; the suite must not execute it')
+
+
 def test_agent_tools():
     """The read-only guard reads every YAML spelling of `tools:` the same way.
 
@@ -1668,6 +1911,7 @@ def main():
     test_hook()
     test_state()
     test_audit()
+    test_calibrate()
     test_agent_tools()
     test_agents()
     test_lifetime()
