@@ -56,22 +56,75 @@ If any review lens is missing, note it — an unexamined dimension is itself a r
    not done until it is green.** If your own fixes broke something, fix that too.
    Never report a verdict over a red suite.
 
-6. **Write `docs/work/<slug>/verdict.md`** and set *Status* in `plan.md` to
+6. **Ask whether anything independent gates this run**, and record the answer:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/bin/guard.py" --check-gate
+   ```
+
+   It is read-only and prints one of `gate: LIVE`, `gate: NOT LIVE`, or
+   `gate: cannot tell`. **It exits 0 in every case, so read the output, not the
+   exit code.** Map them to `live`, `not-live`, and `unknown` respectively —
+   "cannot tell" is `unknown`, never `not-live`. See *Enforcement* below.
+
+7. **Write `docs/work/<slug>/verdict.md`** and set *Status* in `plan.md` to
    `adjudicated`.
 
-7. **Record the state** per the contract, taking `head` after committing your
+8. **Record the state** per the contract, taking `head` after committing your
    fixes so it names the tree you actually judged:
 
    ```bash
    python3 "${CLAUDE_PLUGIN_ROOT}/bin/state.py" docs/work/<slug> \
      '{"stage":"adjudicated","verdict":{"outcome":"ready with follow-ups",
        "suite":"green","accepted":3,"rejected":4,"unmet":0,"escalations":2,
+       "enforcement":"not-live",
        "head":"'"$(git rev-parse --short HEAD)"'"},
        "log":"4-quorum adjudicated ready with follow-ups, 2 escalations"}'
    ```
 
    Record the outcome you actually reached. A `blocked` verdict recorded as
-   `ready` defeats every check downstream of it.
+   `ready` defeats every check downstream of it. `enforcement` must match the
+   verdict's own field; the guard fails the pair when they disagree.
+
+9. **Report** the verdict to the user, leading with anything escalated.
+
+## Choosing the outcome
+
+The outcome is a decision on facts, not an impression of how the run went. Take
+them in order and stop at the first that holds:
+
+| | Outcome |
+|---|---|
+| A blocker survives, the suite is red, **or any acceptance criterion is unmet** | `blocked` |
+| None of those, but escalations or follow-ups are open | `ready with follow-ups` |
+| None of those either | `ready` |
+
+An unmet criterion means `blocked`. It is not a loose end the follow-ups suffix
+can carry: the change does not do what it was agreed it would do, and that is a
+decision for the user rather than a note for them. Seven consecutive runs shipped
+`ready with follow-ups` over unmet criteria, which is how a status field stops
+telling anybody anything.
+
+`ready` is reachable and should be used when it is true. If the run genuinely
+left nothing open, say so.
+
+## Enforcement
+
+The verdict carries `- **Enforcement:** live | not-live | unknown` beside the
+outcome, from the probe in step 6.
+
+This is a fact about the **repository**, not about the change, and the two are
+kept apart on purpose. A repository without branch protection is not thereby
+producing defective work, and an adopter who never vendored the guard is doing
+nothing wrong — so the posture never changes the outcome. But a reader deciding
+whether to trust a verdict is entitled to know whether anything other than the
+agent that wrote it ever checked the branch, and until now that fact lived only
+in `state.json` and a pull-request comment.
+
+When the posture is anything but `live`, add an `## Enforcement` section saying
+in plain words what it costs the reader — that no independent check gated the
+run and the adjudication was self-audited. The guard requires it, because
+`not-live` is a term this pipeline invented and the reader owes it nothing.
 
 8. **Report** the verdict to the user, leading with anything escalated.
 
@@ -121,6 +174,7 @@ Escalate — do not decide — when:
 - **Reviews considered:** 001-correctness, 002-spec-fidelity, ...
 - **Outcome:** <ready | ready with follow-ups | blocked>
 - **Test suite:** <green | red — never leave this red>
+- **Enforcement:** <live | not-live | unknown>
 
 ## Acceptance criteria
 
@@ -145,6 +199,12 @@ Escalate — do not decide — when:
 ### E1 — <what the user must decide>
 
 What is wrong, why it is not mine to decide, and the options with a recommendation.
+
+## Enforcement
+
+Required whenever the field above is not `live`. One or two sentences, in plain
+words: no required status check gated this run, so nothing outside this pipeline
+verified the branch and the adjudication was self-audited.
 
 ## Follow-ups
 

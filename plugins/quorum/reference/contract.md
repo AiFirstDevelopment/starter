@@ -59,13 +59,15 @@ counts, outcomes, and commit SHAs. Never prose, never a copy of the artifacts.
   "stage": "adjudicated",
   "updated": "2026-08-25T21:14:03Z",
   "plan":    { "acs": 4, "steps": 6, "open": 1, "requirementsHash": "3f9a1c…" },
-  "build":   { "stepsDone": 6, "deviations": 2, "suite": "green", "head": "a1b2c3d" },
+  "build":   { "stepsDone": 6, "deviations": 2, "planDefects": 1, "suite": "green",
+               "head": "a1b2c3d" },
   "review":  { "round": 1, "lenses": ["correctness", "spec-fidelity", "security",
                "simplicity", "test-quality"], "missing": [], "findings": 7,
                "blockers": 1, "head": "a1b2c3d" },
   "verdict": { "outcome": "ready with follow-ups", "suite": "green", "accepted": 3,
-               "rejected": 4, "unmet": 0, "escalations": 2, "head": "e4f5g6h" },
-  "recheck": { "findings": 1, "blockers": 0 },
+               "rejected": 4, "unmet": 0, "escalations": 2, "enforcement": "live",
+               "head": "e4f5g6h" },
+  "recheck": { "lens": "judge-diff", "status": "findings", "findings": 1, "blockers": 0 },
   "guard":   { "clean": true, "violations": 0, "gate": "live" },
   "pr":      { "url": "https://github.com/o/r/pull/12", "draft": false },
   "log": [
@@ -79,8 +81,23 @@ counts, outcomes, and commit SHAs. Never prose, never a copy of the artifacts.
 `adjudicated`, `published`. Absent sections mean that step has not run.
 
 `recheck` is the read-only pass over the judge's own adjudication commits — the
-one part of the branch no lens saw. Absent means it did not run, which is not the
-same as clean.
+one part of the branch no lens saw.
+
+`recheck.status` is `clean`, `findings`, or `skipped`, and it exists because a
+count cannot carry the difference. A pass that ran and found nothing and a pass
+that never ran both record zero findings, and those are opposite facts: one says
+the judge's commits were examined, the other says the least-reviewed code on the
+branch is still unexamined. Record the status; never let a zero stand in for it.
+
+An absent `recheck`, or one carrying counts and no `status`, is a record written
+before this field existed. Report it as that — not as clean, and not as skipped.
+
+`build.planDefects` counts the `PLAN DEFECT` headings in the plan's *Build
+notes*. It is deliberately separate from `deviations`, which counts build notes
+of every kind — corrections to the plan's letter, informational asides, and
+defects together. Only the defect count says anything about whether the plan
+held up, so only that one is recorded as its own number. Absent means the record
+predates the field, not zero.
 
 `plan.requirementsHash` fingerprints *Intent*, *Acceptance criteria*, and
 *Non-goals* as they stood when the plan was written, so `/quorum:guard` can prove
@@ -90,6 +107,13 @@ defeated the check entirely.
 
 `guard` is the result of the mechanical rule check at publish time: `clean`, a
 violation count, and `gate`.
+
+`verdict.enforcement` is the same posture as `guard.gate`, recorded earlier and
+by a different step: the judge probes it while writing the verdict, the
+publisher confirms it at publish time. It is duplicated on purpose — the point
+of the field is that the posture reaches `verdict.md`, the document a human
+reads, rather than living only in this index. The guard fails a verdict whose
+field disagrees with the value recorded here.
 
 `gate` is `live`, `not-live`, or `unknown`, and the three are not
 interchangeable. Writing the CI workflow is not the gate — branch protection

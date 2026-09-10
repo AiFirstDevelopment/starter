@@ -119,6 +119,7 @@ VERDICT_OK = """# Verdict — demo
 
 - **Outcome:** ready
 - **Test suite:** green
+- **Enforcement:** live
 
 ## Acceptance criteria
 
@@ -318,6 +319,104 @@ def test_guard():
          lambda r: write(r, 'docs/work/demo/verdict.md',
                          VERDICT_OK.replace('| AC2 | yes |', '| AC2 | **no** |')),
          'verdict')
+
+    # The follow-ups suffix carries open escalations, not a criterion the change
+    # does not meet. Five of the eight recorded runs shipped this way; that is
+    # the reading being closed, so it is the one held down by a test.
+    case('ready with follow-ups over a criterion marked not met',
+         lambda r: write(r, 'docs/work/demo/verdict.md',
+                         VERDICT_OK.replace('**Outcome:** ready', '**Outcome:** ready with follow-ups')
+                         .replace('| AC2 | yes |', '| AC2 | **no** |')),
+         'verdict')
+
+    case('blocked over a criterion marked not met is the point',
+         lambda r: write(r, 'docs/work/demo/verdict.md',
+                         VERDICT_OK.replace('**Outcome:** ready', '**Outcome:** blocked')
+                         .replace('| AC2 | yes |', '| AC2 | **no** |')),
+         None)
+
+    # ------------------------------------------------------ the posture rule
+
+    case('verdict with no Enforcement field',
+         lambda r: write(r, 'docs/work/demo/verdict.md',
+                         VERDICT_OK.replace('- **Enforcement:** live\n', '')),
+         'posture')
+
+    case('Enforcement with a value outside the vocabulary',
+         lambda r: write(r, 'docs/work/demo/verdict.md',
+                         VERDICT_OK.replace('**Enforcement:** live', '**Enforcement:** probably fine')),
+         'posture')
+
+    # "cannot tell" is what --check-gate prints when it cannot read branch
+    # protection. Rounding that up to a pass is the failure the field exists to
+    # prevent, so the word itself is not a value.
+    case('Enforcement recorded as "cannot tell"',
+         lambda r: write(r, 'docs/work/demo/verdict.md',
+                         VERDICT_OK.replace('**Enforcement:** live', '**Enforcement:** cannot tell')),
+         'posture')
+
+    case('not-live without a section explaining it',
+         lambda r: write(r, 'docs/work/demo/verdict.md',
+                         VERDICT_OK.replace('**Enforcement:** live', '**Enforcement:** not-live')),
+         'posture')
+
+    case('not-live with the section is allowed',
+         lambda r: write(r, 'docs/work/demo/verdict.md',
+                         VERDICT_OK.replace('**Enforcement:** live', '**Enforcement:** not-live')
+                         + '\n## Enforcement\n\nNo required status check gated this run;\n'
+                           'the adjudication was self-audited.\n'),
+         None)
+
+    case('unknown with the section is allowed',
+         lambda r: write(r, 'docs/work/demo/verdict.md',
+                         VERDICT_OK.replace('**Enforcement:** live', '**Enforcement:** unknown')
+                         + '\n## Enforcement\n\nBranch protection could not be read, so nothing\n'
+                           'here verified that a check gates the merge.\n'),
+         None)
+
+    # An empty section is the same silence with a heading over it.
+    case('not-live with an empty Enforcement section',
+         lambda r: write(r, 'docs/work/demo/verdict.md',
+                         VERDICT_OK.replace('**Enforcement:** live', '**Enforcement:** not-live')
+                         + '\n## Enforcement\n\n'),
+         'posture')
+
+    case('live needs no section',
+         lambda r: write(r, 'docs/work/demo/verdict.md', VERDICT_OK), None)
+
+    # Every adopter has verdicts written before the field existed. The rule
+    # applies to what this change writes, not to the shelf behind it — so a
+    # verdict already on the base branch is a note, and the same file written by
+    # this change is a violation.
+    def _old_verdict(repo):
+        write(repo, 'docs/work/demo/verdict.md',
+              VERDICT_OK.replace('- **Enforcement:** live\n', ''))
+        git(repo, 'add', '-A')
+        git(repo, 'commit', '-q', '-m', 'verdict from before the field')
+        git(repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+        write(repo, 'tests/widget.test.js', TESTS + '\n// unrelated later change\n')
+
+    case('verdict predating the field, untouched by this change', _old_verdict, None)
+
+    case('verdict and state disagree about the posture',
+         lambda r: (write(r, 'docs/work/demo/verdict.md', VERDICT_OK),
+                    write(r, 'docs/work/demo/state.json',
+                          json.dumps({'verdict': {'enforcement': 'not-live'}}))),
+         'posture')
+
+    case('verdict and state agree about the posture',
+         lambda r: (write(r, 'docs/work/demo/verdict.md', VERDICT_OK),
+                    write(r, 'docs/work/demo/state.json',
+                          json.dumps({'verdict': {'enforcement': 'live'}}))),
+         None)
+
+    # An adopter whose state.json predates the field is not thereby in
+    # violation; absent is absent, not a disagreement.
+    case('state.json predating the enforcement field',
+         lambda r: (write(r, 'docs/work/demo/verdict.md', VERDICT_OK),
+                    write(r, 'docs/work/demo/state.json',
+                          json.dumps({'verdict': {'outcome': 'ready', 'suite': 'green'}}))),
+         None)
 
     case('criterion missing from the verdict',
          lambda r: write(r, 'docs/work/demo/verdict.md',

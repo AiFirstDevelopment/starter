@@ -188,8 +188,11 @@ if (!skipBuild) {
       'thing and record it under a "PLAN DEFECT" heading in Build notes — do not silently ' +
       'redesign around it.\n\n' +
       'When done, set Status in the plan to "built", record the state per the contract ' +
-      '(stage "built", steps done, deviations, suite result, and head taken after your ' +
-      'commit), and summarize what you built, what deviated, and what you left out.',
+      '(stage "built", steps done, deviations, planDefects, suite result, and head taken ' +
+      'after your commit), and summarize what you built, what deviated, and what you left ' +
+      'out. planDefects counts your PLAN DEFECT headings specifically; deviations counts ' +
+      'every build note. Keeping them apart is the point — only the first says whether the ' +
+      'plan held up.',
     { label: 'build', phase: 'Build', agentType: 'quorum:quorum-builder' }
   )
   log(built ? 'Build complete.' : 'Build agent returned nothing — reviewing the tree as it stands.')
@@ -402,7 +405,7 @@ if (!verdict.suiteGreen) {
 let recheck = null
 
 if (skipRecheck) {
-  log('Skipping recheck (skipRecheck set).')
+  log("Skipping recheck (skipRecheck set) — the judge's own commits go unexamined.")
 } else {
   phase('Recheck')
 
@@ -525,8 +528,15 @@ if (skipPublish) {
       'never round "could not tell" up to a pass. Do not draft the PR over this: branch ' +
       'protection is the repository owner\'s decision, not a defect in this change.' +
       '\n\nWhen the PR is open, record the state per the contract: stage "published", a pr ' +
-      'object with the URL and draft flag, a recheck object with the judge-diff findings ' +
-      'and blockers from the summary above, and a guard object with clean, the violation ' +
+      'object with the URL and draft flag, a recheck object with lens "judge-diff", the ' +
+      'findings and blockers from the summary above, and status ' +
+      (skipRecheck
+        ? '"skipped" — the recheck did not run on this pass, and a zero count must not be ' +
+          'left to imply it did'
+        : recheckFindings.length
+          ? '"findings"'
+          : '"clean"') +
+      ', and a guard object with clean, the violation ' +
       'count, and gate set to "live", "not-live", or "unknown". If you could not publish, ' +
       'record no pr and say ' +
       'why in the log line.' +

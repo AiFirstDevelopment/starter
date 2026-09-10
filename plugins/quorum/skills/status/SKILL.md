@@ -154,13 +154,33 @@ Two footnotes worth reporting when they apply:
 - **A missing lens is not a clean bill of health.** If `review.missing` is
   non-empty or `reviews/` has fewer than six lenses, name the missing one and say
   its dimension is unexamined. `behavior` missing means nobody ran the software.
-- **No `recheck` means the judge's own commits were never reviewed.** Absent is
-  not clean. Say so, and that `/quorum:pipeline` is what covers them.
+- **Read `recheck.status`, not the finding count.** `clean` means the judge's
+  own commits were examined and nothing was found. `skipped` means they were
+  not examined at all — report that in the same terms as a missing lens, because
+  that is what it is: the least-reviewed code on the branch, unexamined. A zero
+  count is not the answer to this question; both states carry one.
+
+  A `recheck` block with counts but no `status`, or no `recheck` at all, is a
+  record written before the field existed. Say that it predates the field —
+  neither clean nor skipped is known — rather than guessing from the count.
+
+- **Report `build.planDefects` when it is there.** It counts the `PLAN DEFECT`
+  headings, not the build notes, and it is the only number in the record that
+  says whether the plan held up. `deviations` mixes defects with corrections to
+  the plan's letter and with informational notes, so a high deviation count is
+  not by itself a signal about the plan and should not be reported as one.
+  Absent means the record predates the field, not zero.
 - **`guard` violations outrank everything else you report.** A broken rule is not
   a finding to weigh; say what broke and that `/quorum:guard` names it. Absent
   `guard` means the check never ran, which is not a pass.
-- **`ready` alongside escalations or unmet criteria is a contradiction** in the
-  judge's own output. Report it as suspicious rather than smoothing it over.
+- **`ready` alongside escalations, or any `ready` outcome alongside an unmet
+  criterion, is a contradiction** in the judge's own output. Report it as
+  suspicious rather than smoothing it over — an unmet criterion means `blocked`.
+
+- **Say the enforcement posture whenever the verdict names one.** `not-live` or
+  `unknown` means nothing outside the pipeline checked this branch. That is not
+  a defect in the change and is not reported as one, but a reader weighing a
+  verdict should not have to go looking for it.
 
 ## Report template
 

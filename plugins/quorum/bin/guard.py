@@ -8,6 +8,7 @@ of. These are the ones a machine can settle, so a machine settles them:
   tests          no test file deleted, no test case removed, no new skip or .only
   reviews        the review record is append-only
   verdict        the verdict does not contradict itself
+  posture        the verdict says whether anything independent gated the run
   coverage       every acceptance criterion in the plan is accounted for
   evidence       files and lines cited as proof of a met criterion actually exist
   branch         work is on a work branch, and on the one the plan was written on
@@ -37,7 +38,7 @@ import sys
 # adopting repo to re-vendor. Bump it when the rules change — drift is detected
 # by comparing file contents, so this number is for the error message and for
 # `--version` on a vendored copy, not for the check itself.
-VERSION = '4'
+VERSION = '5'
 
 # What --install-ci writes. Git reports paths with forward slashes, and these are
 # compared against that as well as against the filesystem, so they are literals
@@ -286,14 +287,104 @@ class Guard(object):
                     'outcome "%s" alongside open escalations — an escalation forces '
                     '"ready with follow-ups" or "blocked"' % outcome,
                 )
-            if outcome.strip().lower() == 'ready' and re.search(
-                r'^\|\s*AC\d+\s*\|\s*\**no\**\s*\|', text, re.M | re.I
-            ):
-                self.fail('verdict', 'outcome "ready" with an acceptance criterion marked not met')
+            # Both ready outcomes, not just the bare one. An unmet criterion is a
+            # fact about the change rather than a loose end to carry: seven runs
+            # shipped "ready with follow-ups" over one, which is the reading this
+            # closes. The follow-ups suffix covers open escalations, not a
+            # criterion the change does not meet.
+            if re.search(r'^\|\s*AC\d+\s*\|\s*\**no\**\s*\|', text, re.M | re.I):
+                self.fail(
+                    'verdict',
+                    'outcome "%s" with an acceptance criterion marked not met — an '
+                    'unmet criterion forces "blocked"' % outcome,
+                )
+
+        self.check_posture(text, outcome)
 
         st = self.state().get('verdict') or {}
         if st.get('suite') == 'red' and str(st.get('outcome', '')).startswith('ready'):
             self.fail('verdict', 'state.json records a red suite with outcome "%s"' % st['outcome'])
+
+    POSTURES = ('live', 'not-live', 'unknown')
+
+    def touches_verdict(self):
+        """Does this change write the verdict it is being checked against?
+
+        When git cannot answer — no repository, no base — assume it does. A rule
+        that lapses whenever it cannot see the diff is a rule anyone can switch
+        off by running it somewhere else.
+        """
+        rows = self.changed_files()
+        if rows is None:
+            return True
+        target = os.path.join(self.work_dir, 'verdict.md').replace(os.sep, '/')
+        return any(path == target for _, path in rows)
+
+    def check_posture(self, text, outcome):
+        """The verdict says whether anything independent checked this run.
+
+        `gate` has been in state.json all along and in no verdict anybody read.
+        That is the wrong way round: state.json is an index for tooling, and the
+        verdict is the document a human opens to decide. A run nothing gated is
+        not thereby wrong — branch protection is the repository owner's setting,
+        and an adopter who never vendored is doing nothing wrong — but the reader
+        is entitled to know which kind of run they are reading before they trust
+        its outcome.
+
+        So the posture is recorded beside the outcome and never folded into it.
+        Making a live gate a precondition for "ready" would say the change is
+        defective because the repository is unprotected, which is a different
+        claim about a different thing.
+        """
+        posture = field(text, 'Enforcement')
+
+        if posture is None:
+            # A verdict this change did not write predates the field, and every
+            # adopter has a shelf of them. Failing those would make the rule's
+            # first act be to condemn the record it was added to improve, so the
+            # requirement lands on verdicts written from here on: the ones this
+            # diff touches.
+            if not self.touches_verdict():
+                self.note(
+                    'verdict.md records no enforcement posture; it predates the '
+                    'field and is read as neither gated nor ungated'
+                )
+                return
+            self.fail(
+                'posture',
+                'verdict.md has no "Enforcement" field; record %s beside the '
+                'outcome (guard.py --check-gate reports it)'
+                % ' / '.join(self.POSTURES),
+            )
+            return
+
+        value = posture.strip().strip('`*').lower()
+        if value not in self.POSTURES:
+            self.fail(
+                'posture',
+                'Enforcement is "%s"; expected one of %s. "cannot tell" is '
+                '"unknown", never "not-live"' % (posture.strip(), ', '.join(self.POSTURES)),
+            )
+            return
+
+        # Naming the state is not the same as telling the reader what it costs
+        # them, and "not-live" is a term of art this pipeline invented. A run
+        # nothing gated has to say so in words the reader already knows.
+        if value != 'live' and not has_content(text, 'Enforcement'):
+            self.fail(
+                'posture',
+                'Enforcement is "%s" but no "Enforcement" section says what that '
+                'means for the reader — that no independent check gated this run '
+                'and the adjudication was self-audited' % value,
+            )
+
+        recorded = (self.state().get('verdict') or {}).get('enforcement')
+        if recorded is not None and str(recorded).strip().lower() != value:
+            self.fail(
+                'posture',
+                'verdict.md records Enforcement "%s", state.json records "%s"'
+                % (value, recorded),
+            )
 
     def check_coverage(self):
         """An unmet criterion can be hidden by omission as easily as by lying

@@ -51,6 +51,22 @@ Read `${CLAUDE_PLUGIN_ROOT}/reference/contract.md` for slug and layout rules.
 
    Step 4 reads these. An unrecorded deviation reads as a defect later.
 
+   **When the plan itself was wrong, say so under a `PLAN DEFECT` heading** —
+   not as another bullet among the notes:
+
+   ```markdown
+   ### PLAN DEFECT — S6 names a component that cannot satisfy AC7
+
+   What the plan said, what is actually true, what you built instead, and what
+   should happen to the plan.
+   ```
+
+   The distinction is load-bearing and the two are easy to blur. A deviation is
+   the plan being imprecise and you filling it in; a `PLAN DEFECT` is the plan
+   being *wrong*, and it is the only signal anyone has about whether planning is
+   working. The judge escalates every one of them, and they are counted
+   separately in the state record for that reason.
+
 7. **Stop when the plan is done.** Do not add unrequested features, do not fix
    unrelated issues you notice, do not refactor adjacent code. Note them for the
    user instead.
@@ -64,10 +80,13 @@ Read `${CLAUDE_PLUGIN_ROOT}/reference/contract.md` for slug and layout rules.
 
    ```bash
    python3 "${CLAUDE_PLUGIN_ROOT}/bin/state.py" docs/work/<slug> \
-     '{"stage":"built","build":{"stepsDone":6,"deviations":2,"suite":"green",
-       "head":"'"$(git rev-parse --short HEAD)"'"},
-       "log":"2-build built 6/6, 2 deviations, suite green"}'
+     '{"stage":"built","build":{"stepsDone":6,"deviations":2,"planDefects":1,
+       "suite":"green","head":"'"$(git rev-parse --short HEAD)"'"},
+       "log":"2-build built 6/6, 2 deviations incl. 1 PLAN DEFECT, suite green"}'
    ```
+
+   `planDefects` is the count of `PLAN DEFECT` headings, not of build notes.
+   Record `0` honestly when the plan held.
 
    `suite` is `green`, `red`, or `none`. Record `red` honestly — the next step
    needs to know, and a suite recorded green over failing tests is the one lie
