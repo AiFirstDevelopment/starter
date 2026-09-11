@@ -12,6 +12,16 @@ don't understand and are right to be wary of.
 A Claude Code plugin marketplace — the starter kit you pull into a repo to get a
 working delivery discipline on day one, and keep for the changes after that.
 
+## The book
+
+**[Agentic Workflows](https://github.com/AiFirstDevelopment/quorum/releases/latest/download/Agentic-Workflows.pdf)** — free PDF, 3.4 MB.
+
+Joel Stevick and Sara Bahrini, edited by Luke O'Malley, Ai First Press. The
+practice this repository implements, written down. That link always resolves to
+the newest copy.
+
+---
+
 Two plugins, adoptable together or separately:
 
 | Plugin | What it gives you |
