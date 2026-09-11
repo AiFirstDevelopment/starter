@@ -1,4 +1,4 @@
-# starter
+# quorum
 
 Quorum makes an AI write down what it's going to build — in terms you can actually
 check — before it writes any code, then holds it to that plan mechanically instead
@@ -21,6 +21,12 @@ Two plugins, adoptable together or separately:
 
 Future repos pull these in by committing a few lines of JSON. They do not copy the
 skills, and nothing needs to be installed on anyone's machine beforehand.
+
+> **The marketplace is still called `starter`.** This repository was renamed from
+> `starter` to `quorum`; the marketplace identifier inside it deliberately was
+> not, because it is what every adopting repo's `settings.json` already says in
+> `quorum@starter`. Renaming it would break those installs to buy nothing. So the
+> repo is `AiFirstDevelopment/quorum` and the plugin string stays `quorum@starter`.
 
 ---
 
@@ -75,7 +81,7 @@ at `.claude/settings.json`:
     "starter": {
       "source": {
         "source": "github",
-        "repo": "AiFirstDevelopment/starter"
+        "repo": "AiFirstDevelopment/quorum"
       }
     }
   },
@@ -105,7 +111,7 @@ and running it itself when `/tests:run` is unavailable.
 **Pinning.** To freeze a repo against changes here, add a ref:
 
 ```json
-"source": { "source": "github", "repo": "AiFirstDevelopment/starter", "ref": "v1.0.0" }
+"source": { "source": "github", "repo": "AiFirstDevelopment/quorum", "ref": "v1.0.0" }
 ```
 
 Omit `ref` to track the default branch and pick up improvements automatically.
@@ -113,7 +119,7 @@ Omit `ref` to track the default branch and pick up improvements automatically.
 **Trying it out** without committing anything:
 
 ```
-/plugin marketplace add AiFirstDevelopment/starter
+/plugin marketplace add AiFirstDevelopment/quorum
 /plugin install quorum@starter
 /plugin install tests@starter
 ```
@@ -1006,7 +1012,7 @@ and what I want you to do.
 
 WHAT THIS IS
 
-starter is a plugin marketplace at https://github.com/AiFirstDevelopment/starter
+starter is a plugin marketplace at https://github.com/AiFirstDevelopment/quorum
 with two plugins.
 
 quorum — a delivery pipeline:
@@ -1084,7 +1090,7 @@ WHAT I WANT YOU TO DO NOW
    {
      "extraKnownMarketplaces": {
        "starter": {
-         "source": { "source": "github", "repo": "AiFirstDevelopment/starter" }
+         "source": { "source": "github", "repo": "AiFirstDevelopment/quorum" }
        }
      },
      "enabledPlugins": { "quorum@starter": true, "tests@starter": true }
@@ -1094,7 +1100,7 @@ WHAT I WANT YOU TO DO NOW
 
 3. Install the plugins now, so I don't have to add the marketplace by hand:
 
-   claude plugin marketplace add AiFirstDevelopment/starter
+   claude plugin marketplace add AiFirstDevelopment/quorum
    claude plugin install quorum@starter
    claude plugin install tests@starter
    claude plugin list
