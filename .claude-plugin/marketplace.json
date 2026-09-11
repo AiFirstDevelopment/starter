@@ -1,11 +1,11 @@
 {
-  "name": "starter",
+  "name": "quorum",
   "owner": {
     "name": "Joel Stevick",
     "url": "https://github.com/AiFirstDevelopment"
   },
   "metadata": {
-    "description": "Starter kit of reusable Claude Code skills to pull into new repos: an autonomous delivery pipeline and a behavioral regression-testing discipline.",
+    "description": "Reusable Claude Code skills to pull into a repo: an autonomous plan-build-review-adjudicate delivery pipeline, and a behavioral regression-testing discipline.",
     "version": "0.25.0"
   },
   "plugins": [

@@ -22,11 +22,13 @@ Two plugins, adoptable together or separately:
 Future repos pull these in by committing a few lines of JSON. They do not copy the
 skills, and nothing needs to be installed on anyone's machine beforehand.
 
-> **The marketplace is still called `starter`.** This repository was renamed from
-> `starter` to `quorum`; the marketplace identifier inside it deliberately was
-> not, because it is what every adopting repo's `settings.json` already says in
-> `quorum@starter`. Renaming it would break those installs to buy nothing. So the
-> repo is `AiFirstDevelopment/quorum` and the plugin string stays `quorum@starter`.
+> **Renamed from `starter`.** Both the repository and the marketplace were called
+> `starter` and are now `quorum`. The old GitHub URL redirects, so clones keep
+> working — but a marketplace is keyed by *name* in Claude Code's
+> `known_marketplaces.json`, and that does not follow a rename. Anyone who
+> installed it as `starter` re-adds it under the new name and updates
+> `quorum@quorum` to `quorum@quorum` in their settings; see
+> [Installing into a repo](#installing-into-a-repo).
 
 ---
 
@@ -78,7 +80,7 @@ at `.claude/settings.json`:
 ```json
 {
   "extraKnownMarketplaces": {
-    "starter": {
+    "quorum": {
       "source": {
         "source": "github",
         "repo": "AiFirstDevelopment/quorum"
@@ -86,8 +88,8 @@ at `.claude/settings.json`:
     }
   },
   "enabledPlugins": {
-    "quorum@starter": true,
-    "tests@starter": true
+    "quorum@quorum": true,
+    "tests@quorum": true
   }
 }
 ```
@@ -102,9 +104,9 @@ to one machine and do **not** reach cloud sessions, Cowork, or routines. Plugins
 enabled only in user settings don't transfer either. A repo-declared marketplace
 does.
 
-**Adopt one, not both.** `tests@starter` stands alone — a repo can take the
+**Adopt one, not both.** `tests@quorum` stands alone — a repo can take the
 testing discipline without an autonomous judge, which is the right call for most
-existing codebases. `quorum@starter` works without `tests`, but expects it: the
+existing codebases. `quorum@quorum` works without `tests`, but expects it: the
 judge must run a regression suite to reach a verdict, and falls back to finding
 and running it itself when `/tests:run` is unavailable.
 
@@ -120,8 +122,8 @@ Omit `ref` to track the default branch and pick up improvements automatically.
 
 ```
 /plugin marketplace add AiFirstDevelopment/quorum
-/plugin install quorum@starter
-/plugin install tests@starter
+/plugin install quorum@quorum
+/plugin install tests@quorum
 ```
 
 ---
@@ -1007,12 +1009,12 @@ Everything but that one runner is host-agnostic, the publisher included — it
 speaks `glab` and opens merge requests.
 
 ```text
-This repo should adopt the "starter" Claude Code plugins. Here is what they are
+This repo should adopt the "quorum" Claude Code plugins. Here is what they are
 and what I want you to do.
 
 WHAT THIS IS
 
-starter is a plugin marketplace at https://github.com/AiFirstDevelopment/quorum
+quorum is a plugin marketplace at https://github.com/AiFirstDevelopment/quorum
 with two plugins.
 
 quorum — a delivery pipeline:
@@ -1089,11 +1091,11 @@ WHAT I WANT YOU TO DO NOW
 
    {
      "extraKnownMarketplaces": {
-       "starter": {
+       "quorum": {
          "source": { "source": "github", "repo": "AiFirstDevelopment/quorum" }
        }
      },
-     "enabledPlugins": { "quorum@starter": true, "tests@starter": true }
+     "enabledPlugins": { "quorum@quorum": true, "tests@quorum": true }
    }
 
 2. Create docs/work/ with a .gitkeep so the artifact contract has a home.
@@ -1101,8 +1103,8 @@ WHAT I WANT YOU TO DO NOW
 3. Install the plugins now, so I don't have to add the marketplace by hand:
 
    claude plugin marketplace add AiFirstDevelopment/quorum
-   claude plugin install quorum@starter
-   claude plugin install tests@starter
+   claude plugin install quorum@quorum
+   claude plugin install tests@quorum
    claude plugin list
 
    Run these with Bash and show me the output of the last one.
